@@ -1,0 +1,31 @@
+services:
+
+  # ── Django backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./face_recognition_system
+      dockerfile: Dockerfile
+    container_name: frs_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./face_recognition_system:/app   # live-reload: edits reflect instantly
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  # ── React / Vite frontend ───────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./face_recognition_system/frontend
+      dockerfile: Dockerfile
+    container_name: frs_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./face_recognition_system/frontend:/app   # live-reload
+      - /app/node_modules                         # keep container node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
