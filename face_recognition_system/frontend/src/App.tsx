@@ -3,6 +3,8 @@ import type { FC, CSSProperties, ChangeEvent, KeyboardEvent } from 'react'
 import aituLogo from './assets/aitu_logo.png'
 import Dashboard from './Dashboard'
 
+const API = ''
+
 // ── Types ────────────────────────────────────────────────────────────────────
 type AuthStep = 'LOGIN' | 'ECP'
 type TabType = 'AUTH' | 'REGISTER'
@@ -360,7 +362,7 @@ const AuthForm: FC<AuthFormProps> = ({
       setFetchingAuth(true)
       setAuthStatus(null)
       setSuccessMsg(null)
-      const res = await fetch('http://127.0.0.1:8000/api/auth/login/', {
+      const res = await fetch(`${API}/api/auth/login/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ login, password }),
@@ -392,7 +394,7 @@ const AuthForm: FC<AuthFormProps> = ({
     if (regPassword !== regPassword2) { setRegError('Пароли не совпадают'); return }
     setRegLoading(true)
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/register/', {
+      const res = await fetch(`${API}/api/auth/register/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: regUsername, email: regEmail, password: regPassword, password_confirm: regPassword2 }),

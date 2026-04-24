@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import type { FC, CSSProperties, ReactNode } from 'react'
 
+const API = ''
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NavPage = 'overview' | 'users' | 'recognition' | 'cameras' | 'settings' | 'history'
 
@@ -419,19 +421,19 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
     try {
       const requests: Promise<Response>[] = [
-        fetch('http://127.0.0.1:8000/api/auth/faces/all_faces/', { headers }),
-        fetch('http://127.0.0.1:8000/api/auth/logs/all_logs/', { headers }),
-        fetch('http://127.0.0.1:8000/api/auth/cameras/', { headers }),
+        fetch(`${API}/api/auth/faces/all_faces/`, { headers }),
+        fetch(`${API}/api/auth/logs/all_logs/`, { headers }),
+        fetch(`${API}/api/auth/cameras/`, { headers }),
       ]
 
       if (canViewHistory) {
-        requests.push(fetch('http://127.0.0.1:8000/api/auth/audit-logs/', { headers }))
+        requests.push(fetch(`${API}/api/auth/audit-logs/`, { headers }))
       }
       if (canViewCompanyUsers) {
-        requests.push(fetch('http://127.0.0.1:8000/api/auth/users/', { headers }))
+        requests.push(fetch(`${API}/api/auth/users/`, { headers }))
       }
       if (isSuperAdmin) {
-        requests.push(fetch('http://127.0.0.1:8000/api/auth/admin-users/', { headers }))
+        requests.push(fetch(`${API}/api/auth/admin-users/`, { headers }))
       }
 
       const responses = await Promise.all(requests)
@@ -479,7 +481,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     const finalCameras = selectedCameras.length > 0 ? selectedCameras : (cameras.length > 0 ? [cameras[0].id] : [])
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/faces/', {
+      const res = await fetch(`${API}/api/auth/faces/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -512,7 +514,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     setCreatingCam(true)
     const token = localStorage.getItem('access')
     try {
-      const resp = await fetch('http://127.0.0.1:8000/api/auth/cameras/create/', {
+      const resp = await fetch(`${API}/api/auth/cameras/create/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -543,7 +545,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     if (!confirm('Вы уверены, что хотите удалить этого пользователя?')) return
     const token = localStorage.getItem('access')
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/auth/faces/${id}/`, {
+      const res = await fetch(`${API}/api/auth/faces/${id}/`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -562,7 +564,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     setUpdatingFace(true)
     const token = localStorage.getItem('access')
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/auth/faces/${editFaceModal.id}/`, {
+      const res = await fetch(`${API}/api/auth/faces/${editFaceModal.id}/`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -590,7 +592,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     if (!confirm('Вы уверены, что хотите убрать доступ для этого пользователя?')) return
     const token = localStorage.getItem('access')
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/auth/cameras/${camId}/remove_face/`, {
+      const res = await fetch(`${API}/api/auth/cameras/${camId}/remove_face/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -600,7 +602,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       })
       if (res.ok) {
         // Refresh this camera's faces in the map
-        const resFaces = await fetch(`http://127.0.0.1:8000/api/auth/cameras/${camId}/faces/`, {
+        const resFaces = await fetch(`${API}/api/auth/cameras/${camId}/faces/`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
         if (resFaces.ok) {
@@ -626,7 +628,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     const token = localStorage.getItem('access')
     if (!token) return
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/auth/cameras/${cam.id}/faces/`, {
+      const res = await fetch(`${API}/api/auth/cameras/${cam.id}/faces/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) {
@@ -647,7 +649,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     const token = localStorage.getItem('access')
     if (!token) return
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/auth/cameras/${addExistingFaceModal.id}/add_face/`, {
+      const res = await fetch(`${API}/api/auth/cameras/${addExistingFaceModal.id}/add_face/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -657,7 +659,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       })
       if (res.ok) {
         if (expandedCameraIds.includes(addExistingFaceModal.id)) {
-          const resFaces = await fetch(`http://127.0.0.1:8000/api/auth/cameras/${addExistingFaceModal.id}/faces/`, {
+          const resFaces = await fetch(`${API}/api/auth/cameras/${addExistingFaceModal.id}/faces/`, {
             headers: { 'Authorization': `Bearer ${token}` }
           })
           if (resFaces.ok) {
@@ -703,7 +705,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     setRequestError('')
     const token = localStorage.getItem('access')
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/admin-users/', {
+      const res = await fetch(`${API}/api/auth/admin-users/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

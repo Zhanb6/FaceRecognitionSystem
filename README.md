@@ -1,3 +1,46 @@
+## DiplomaProjectAITU — Face Recognition System
+
+### Структура
+
+- `face_recognition_system/` — backend на **FastAPI**
+  - `app/` — приложение FastAPI (роуты, модели, auth)
+  - `requirements.txt` — зависимости backend
+  - `create_superuser.py` — создание суперпользователя
+- `face_recognition_system/frontend/` — frontend на **React + Vite**
+- `docker-compose.yml` — запуск сайта целиком (frontend + backend)
+
+### Запуск через Docker (рекомендуется)
+
+```bash
+docker compose up --build
+```
+
+- Frontend: `http://127.0.0.1:5173/`
+- Backend API: `http://127.0.0.1:8000/`
+- Swagger: `http://127.0.0.1:8000/docs`
+
+Frontend обращается к API по `/api/...` через Vite proxy.
+
+### Локальный запуск (без Docker)
+
+Backend:
+
+```bash
+cd face_recognition_system
+python3 -m pip install -r requirements.txt
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Frontend:
+
+```bash
+cd face_recognition_system/frontend
+npm install
+npm run dev
+```
+
+Открыть: `http://127.0.0.1:5173/`
+
 # Auth Setup Guide
 
 ## 1. Install dependencies

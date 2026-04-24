@@ -1,6 +1,6 @@
 services:
 
-  # ── Django backend ──────────────────────────────────────────────────────────
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
   backend:
     build:
       context: ./face_recognition_system
@@ -10,6 +10,7 @@ services:
       - "8000:8000"
     volumes:
       - ./face_recognition_system:/app   # live-reload: edits reflect instantly
+      - ./face_recognition_system/db.sqlite3:/app/db.sqlite3
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
@@ -23,6 +24,8 @@ services:
     container_name: frs_frontend
     ports:
       - "5173:5173"
+    environment:
+      - VITE_PROXY_TARGET=http://backend:8000
     volumes:
       - ./face_recognition_system/frontend:/app   # live-reload
       - /app/node_modules                         # keep container node_modules
