@@ -19,13 +19,14 @@ const S: Record<string, CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     fontFamily: "'Inter', 'Segoe UI', sans-serif",
-    background: '#f0f4fa',
+    background: 'var(--dash-bg)',
+    color: 'var(--dash-text)',
   },
   // ── Top bar
   topbar: {
     height: 58,
-    background: '#fff',
-    borderBottom: '1px solid #e2e8f0',
+    background: 'var(--dash-surface)',
+    borderBottom: '1px solid var(--dash-border)',
     display: 'flex',
     alignItems: 'center',
     padding: '0 28px',
@@ -47,10 +48,10 @@ const S: Record<string, CSSProperties> = {
     flexShrink: 0, letterSpacing: '-0.3px',
     boxShadow: '0 2px 8px rgba(26,63,212,0.35)',
   },
-  topbarTitle: { fontSize: 14, fontWeight: 700, color: '#0d1b4b', flex: 1 },
+  topbarTitle: { fontSize: 14, fontWeight: 700, color: 'var(--dash-heading)', flex: 1 },
   topbarUser: {
     display: 'flex', alignItems: 'center', gap: 10,
-    fontSize: 13, color: '#4a5568',
+    fontSize: 13, color: 'var(--dash-muted)',
   },
   userAvatar: {
     width: 32, height: 32, borderRadius: '50%',
@@ -61,7 +62,7 @@ const S: Record<string, CSSProperties> = {
   logoutBtn: {
     background: 'none', border: '1px solid #e2e8f0',
     borderRadius: 7, padding: '5px 12px',
-    fontSize: 12, color: '#64748b', cursor: 'pointer',
+    fontSize: 12, color: 'var(--dash-muted)', cursor: 'pointer',
     fontFamily: "'Inter', sans-serif",
     transition: 'all 0.18s',
   },
@@ -70,8 +71,8 @@ const S: Record<string, CSSProperties> = {
   // ── Sidebar
   sidebar: {
     width: 220, flexShrink: 0,
-    background: '#fff',
-    borderRight: '1px solid #e2e8f0',
+    background: 'var(--dash-surface)',
+    borderRight: '1px solid var(--dash-border)',
     padding: '20px 0',
     display: 'flex', flexDirection: 'column',
     overflowY: 'auto' as const,
@@ -82,9 +83,9 @@ const S: Record<string, CSSProperties> = {
     textTransform: 'uppercase' as const,
   },
   // ── Main area
-  main: { flex: 1, padding: 28, overflowY: 'auto' as const },
-  pageTitle: { fontSize: 22, fontWeight: 700, color: '#0d1b4b', marginBottom: 6 },
-  pageSubtitle: { fontSize: 13, color: '#64748b', marginBottom: 24 },
+  main: { flex: 1, padding: 28, overflowY: 'auto' as const, background: 'var(--dash-bg)' },
+  pageTitle: { fontSize: 22, fontWeight: 700, color: 'var(--dash-heading)', marginBottom: 6 },
+  pageSubtitle: { fontSize: 13, color: 'var(--dash-muted)', marginBottom: 24 },
   // ── Stat cards
   statsGrid: {
     display: 'grid',
@@ -92,37 +93,37 @@ const S: Record<string, CSSProperties> = {
     gap: 18, marginBottom: 28,
   },
   statCard: {
-    background: '#fff', borderRadius: 14,
+    background: 'var(--dash-surface)', borderRadius: 14,
     padding: '20px 22px',
     boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
     display: 'flex', flexDirection: 'column' as const, gap: 6,
   },
   statIcon: { fontSize: 26, marginBottom: 4 },
-  statValue: { fontSize: 28, fontWeight: 700, color: '#0d1b4b', lineHeight: 1 },
-  statLabel: { fontSize: 12, color: '#64748b', fontWeight: 500 },
+  statValue: { fontSize: 28, fontWeight: 700, color: 'var(--dash-heading)', lineHeight: 1 },
+  statLabel: { fontSize: 12, color: 'var(--dash-muted)', fontWeight: 500 },
   statDelta: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
   // ── Card / Table
   card: {
-    background: '#fff', borderRadius: 14,
+    background: 'var(--dash-surface)', borderRadius: 14,
     boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
     overflow: 'hidden',
     marginBottom: 24,
   },
   cardHeader: {
-    padding: '16px 22px', borderBottom: '1px solid #f1f5f9',
+    padding: '16px 22px', borderBottom: '1px solid var(--dash-border-soft)',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
   },
-  cardTitle: { fontSize: 15, fontWeight: 600, color: '#0d1b4b' },
+  cardTitle: { fontSize: 15, fontWeight: 600, color: 'var(--dash-heading)' },
   table: { width: '100%', borderCollapse: 'collapse' as const },
   th: {
     padding: '11px 18px', textAlign: 'left' as const,
     fontSize: 11, fontWeight: 600, color: '#94a3b8',
     textTransform: 'uppercase' as const, letterSpacing: '0.06em',
-    background: '#f8fafc', borderBottom: '1px solid #f1f5f9',
+    background: 'var(--dash-table-head)', borderBottom: '1px solid var(--dash-border-soft)',
   },
   td: {
-    padding: '12px 18px', fontSize: 13, color: '#334155',
-    borderBottom: '1px solid #f8fafc',
+    padding: '12px 18px', fontSize: 13, color: 'var(--dash-text)',
+    borderBottom: '1px solid var(--dash-border-soft)',
   },
   // ── Badges
   badgeSuccess: {
@@ -160,9 +161,9 @@ const S: Record<string, CSSProperties> = {
   },
   // ── Mini button
   miniBtn: {
-    background: 'none', border: '1px solid #e2e8f0',
+    background: 'var(--dash-control-bg)', border: '1px solid var(--dash-border)',
     borderRadius: 6, padding: '4px 10px',
-    fontSize: 12, color: '#475569', cursor: 'pointer',
+    fontSize: 12, color: 'var(--dash-text)', cursor: 'pointer',
     fontFamily: "'Inter', sans-serif",
   },
   primaryMiniBtn: {
@@ -180,11 +181,11 @@ const S: Record<string, CSSProperties> = {
   },
   // ── Settings form
   settingRow: {
-    padding: '16px 22px', borderBottom: '1px solid #f1f5f9',
+    padding: '16px 22px', borderBottom: '1px solid var(--dash-border-soft)',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
   },
-  settingLabel: { fontSize: 14, color: '#334155', fontWeight: 500 },
-  settingDesc: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  settingLabel: { fontSize: 14, color: 'var(--dash-text)', fontWeight: 500 },
+  settingDesc: { fontSize: 12, color: 'var(--dash-muted-soft)', marginTop: 2 },
   toggle: {
     width: 42, height: 24, borderRadius: 12,
     cursor: 'pointer', position: 'relative' as const,
@@ -199,8 +200,8 @@ const S: Record<string, CSSProperties> = {
     transition: 'left 0.2s',
   },
   settingInput: {
-    border: '1.5px solid #e2e8f0', borderRadius: 8,
-    padding: '7px 12px', fontSize: 13, color: '#0d1b4b', background: '#fff',
+    border: '1.5px solid var(--dash-border)', borderRadius: 8,
+    padding: '7px 12px', fontSize: 13, color: 'var(--dash-heading)', background: 'var(--dash-input-bg)',
     fontFamily: "'Inter', sans-serif", outline: 'none', width: 200,
   },
   grid2: {
@@ -214,18 +215,18 @@ const S: Record<string, CSSProperties> = {
     zIndex: 1000, animation: 'modalOverlay 0.25s ease',
   },
   modal: {
-    background: '#fff', borderRadius: 16, width: '90%',
+    background: 'var(--dash-surface)', borderRadius: 16, width: '90%',
     boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
     animation: 'modalBox 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
     position: 'relative' as const, overflow: 'hidden',
   },
   modalHeader: {
-    padding: '18px 28px', borderBottom: '1px solid #f1f5f9',
+    padding: '18px 28px', borderBottom: '1px solid var(--dash-border-soft)',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    background: '#f8fafc',
+    background: 'var(--dash-table-head)',
   },
   closeBtn: {
-    background: '#f1f5f9', border: 'none', width: 28, height: 28,
+    background: 'var(--dash-control-bg)', border: 'none', width: 28, height: 28,
     borderRadius: '50%', cursor: 'pointer', display: 'flex',
     alignItems: 'center', justifyContent: 'center', fontSize: 20,
     color: '#64748b', transition: 'all 0.2s',
@@ -276,13 +277,42 @@ const Toggle: FC<{ on: boolean; onChange: () => void }> = ({ on, onChange }) => 
   </button>
 )
 
+const lightThemeVars = {
+  '--dash-bg': '#f0f4fa',
+  '--dash-surface': '#ffffff',
+  '--dash-heading': '#0d1b4b',
+  '--dash-text': '#334155',
+  '--dash-muted': '#64748b',
+  '--dash-muted-soft': '#94a3b8',
+  '--dash-border': '#e2e8f0',
+  '--dash-border-soft': '#f1f5f9',
+  '--dash-table-head': '#f8fafc',
+  '--dash-control-bg': '#ffffff',
+  '--dash-input-bg': '#ffffff',
+} as CSSProperties
+
+const darkThemeVars = {
+  '--dash-bg': '#0f172a',
+  '--dash-surface': '#111827',
+  '--dash-heading': '#f8fafc',
+  '--dash-text': '#dbe4ef',
+  '--dash-muted': '#a5b4c8',
+  '--dash-muted-soft': '#7f8ea3',
+  '--dash-border': '#334155',
+  '--dash-border-soft': '#263244',
+  '--dash-table-head': '#162033',
+  '--dash-control-bg': '#1f2937',
+  '--dash-input-bg': '#0b1220',
+} as CSSProperties
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) => {
   const [page, setPage] = useState<NavPage>('overview')
-  const [settings, setSettings] = useState({
-    liveDetect: true, alerts: true, saveLog: true, darkMode: false, twoFactor: false,
+  const [settings, setSettings] = useState(() => ({
+    liveDetect: true, alerts: true, saveLog: true, twoFactor: false,
     threshold: '85',
-  })
+    darkMode: localStorage.getItem('dashboard_dark_mode') === 'true',
+  }))
   const [searchUser, setSearchUser] = useState('')
   const [recognitionFilter, setRecognitionFilter] = useState<'all' | 'known' | 'unknown'>('all')
 
@@ -426,6 +456,11 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     fetchDashboardData(controller.signal)
     return () => controller.abort()
   }, [fetchDashboardData])
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_dark_mode', String(settings.darkMode))
+    document.body.style.background = settings.darkMode ? '#0f172a' : '#f0f4fa'
+  }, [settings.darkMode])
 
   const handleAddFace = async () => {
     if (!canManageFaces) return
@@ -1384,7 +1419,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   }
 
   return (
-    <div style={S.root}>
+    <div
+      className={settings.darkMode ? 'dashboard-dark' : 'dashboard-light'}
+      style={{
+        ...S.root,
+        ...(settings.darkMode ? darkThemeVars : lightThemeVars),
+      }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         @keyframes dashFade { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
@@ -1394,6 +1435,35 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         .dash-logout:hover { background: #fee2e2 !important; color: #dc2626 !important; border-color: #fecaca !important; }
         .dash-mini-btn:hover { background: #f8fafc !important; }
         tr:hover td { background: #fafbff; }
+        .dashboard-dark .dash-nav-btn:hover { background: rgba(96,165,250,0.14) !important; color: #93c5fd !important; }
+        .dashboard-dark .dash-mini-btn:hover { background: #243244 !important; }
+        .dashboard-dark tr:hover td { background: #182338 !important; }
+        .dashboard-dark input,
+        .dashboard-dark select {
+          background: var(--dash-input-bg) !important;
+          border-color: var(--dash-border) !important;
+          color: var(--dash-heading) !important;
+        }
+        .dashboard-dark input::placeholder {
+          color: var(--dash-muted-soft) !important;
+        }
+        .dashboard-dark nav button {
+          color: var(--dash-text) !important;
+        }
+        .dashboard-dark td,
+        .dashboard-dark th,
+        .dashboard-dark label,
+        .dashboard-dark h3 {
+          color: var(--dash-text) !important;
+        }
+        .dashboard-dark div,
+        .dashboard-dark span,
+        .dashboard-dark label,
+        .dashboard-dark td,
+        .dashboard-dark th,
+        .dashboard-dark h3 {
+          color: inherit;
+        }
       `}</style>
 
       {/* Modal Overlay for Adding User */}
