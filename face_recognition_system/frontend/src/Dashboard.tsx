@@ -693,7 +693,6 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const offlineCamerasCount = Math.max(cameras.length - activeCamerasCount, 0)
   const usersWithoutCameraAccessCount = faces.filter(face => !face.allowed_cameras || face.allowed_cameras.length === 0).length
   const companyNameCount = new Set(adminAccounts.map(admin => admin.company_name).filter(Boolean)).size
-  const companyAccountsCount = adminAccounts.length + faces.length
   const recognitionDelta = yesterdayLogsCount > 0
     ? `${todayLogs.length >= yesterdayLogsCount ? '+' : ''}${Math.round(((todayLogs.length - yesterdayLogsCount) / yesterdayLogsCount) * 100)}% к вчера`
     : `${yesterdayLogsCount} вчера`
@@ -705,7 +704,6 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     { label: 'Активных камер', value: `${activeCamerasCount} / ${cameras.length}`, icon: '📷', delta: `${offlineCamerasCount} офлайн`, color: '#f59e0b' },
     ...(isSuperAdmin ? [{ label: 'Компаний', value: String(companyNameCount), icon: '🏢', delta: 'Всего организаций', color: '#0d9488' }] : []),
     ...((isSuperAdmin || isCompanyAdmin) ? [{ label: 'Неактивных пользователей', value: String(usersWithoutCameraAccessCount), icon: '🚫', delta: 'Без доступа к камерам', color: '#ef4444' }] : []),
-    ...(isSuperAdmin ? [{ label: 'Аккаунтов компании', value: String(companyAccountsCount), icon: '🏢', delta: 'Админы и пользователи', color: '#0d9488' }] : []),
   ]
 
   const hourlyActivity = Array.from({ length: 12 }, (_, index) => {

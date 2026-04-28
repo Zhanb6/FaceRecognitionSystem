@@ -195,3 +195,4 @@ python3 create_superuser.py
 - [frontend/src/Dashboard.tsx] — changed the add-user role default to `-` and required an explicit role selection before saving.
 - [frontend/src/Dashboard.tsx] — limited the company-account count to superadmins and added an inactive-user count for profiles without camera access.
 - [frontend/src/Dashboard.tsx] — removed superadmin overview requests to `/api/auth/users/` and `/api/auth/companies/` to avoid stale-backend 400/404 console errors.
+- [frontend/src/Dashboard.tsx] — removed the `Аккаунтов компании` overview card.
