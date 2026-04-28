@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import type { FC, CSSProperties, ReactNode } from 'react'
 import { ApiError, apiRequest, getErrorMessage, toJsonBody } from './api'
-import type { AdminAccount, AuditEntry, AuthUser, CameraAcc, CompanyAccount, CompanyUser, Face, RecognitionLog } from './types'
+import type { AdminAccount, AuditEntry, AuthUser, CameraAcc, Face, RecognitionLog } from './types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NavPage = 'overview' | 'users' | 'admins' | 'recognition' | 'cameras' | 'settings' | 'history'
@@ -325,19 +325,16 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const canManageCameras = isSuperAdmin || isCompanyAdmin
   const canManageFaces = isSuperAdmin || isCompanyAdmin || user?.is_camera
   const canViewHistory = isSuperAdmin
-  const canViewCompanyUsers = isCompanyAdmin
 
   const [faces, setFaces] = useState<Face[]>([])
   const [logs, setLogs] = useState<RecognitionLog[]>([])
   const [cameras, setCameras] = useState<CameraAcc[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([])
-  const [companyUsers, setCompanyUsers] = useState<CompanyUser[]>([])
-  const [companies, setCompanies] = useState<CompanyAccount[]>([])
   const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>([])
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [newFaceName, setNewFaceName] = useState('')
-  const [newFaceRole, setNewFaceRole] = useState('Студент')
+  const [newFaceRole, setNewFaceRole] = useState('')
   const [customRole, setCustomRole] = useState('')
   const [selectedCameras, setSelectedCameras] = useState<number[]>([])
   const [addingFace, setAddingFace] = useState(false)
@@ -430,28 +427,12 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         ))
       }
 
-      if (canViewCompanyUsers) {
-        optionalRequests.push(loadOptionalDashboardSection(
-          apiRequest<CompanyUser[]>('/api/auth/users/', { auth: true, signal }),
-          setCompanyUsers,
-          'пользователей компании',
-          signal,
-        ))
-      }
-
       if (isSuperAdmin) {
         optionalRequests.push(loadOptionalDashboardSection(
           apiRequest<AdminAccount[]>('/api/auth/admin-users/', { auth: true, signal }),
           setAdminAccounts,
           'список администраторов',
           signal,
-        ))
-        optionalRequests.push(loadOptionalDashboardSection(
-          apiRequest<CompanyAccount[]>('/api/auth/companies/', { auth: true, signal }),
-          setCompanies,
-          'список компаний',
-          signal,
-          false,
         ))
       }
 
@@ -465,7 +446,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       }
       setDashboardError(getErrorMessage(error, 'Не удалось загрузить данные панели'))
     }
-  }, [canViewCompanyUsers, canViewHistory, isSuperAdmin, loadOptionalDashboardSection, onLogout])
+  }, [canViewHistory, isSuperAdmin, loadOptionalDashboardSection, onLogout])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -485,7 +466,6 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     if (!finalRole) return
 
     setAddingFace(true)
-    const finalCameras = selectedCameras.length > 0 ? selectedCameras : (cameras.length > 0 ? [cameras[0].id] : [])
 
     try {
       setDashboardError('')
@@ -495,12 +475,12 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         body: toJsonBody({
           full_name: newFaceName,
           role: finalRole,
-          allowed_cameras: finalCameras
+          allowed_cameras: selectedCameras
         })
       })
       setShowAddModal(false)
       setNewFaceName('')
-      setNewFaceRole(finalRole)
+      setNewFaceRole('')
       setCustomRole('')
       setSelectedCameras([])
       fetchDashboardData()
@@ -711,8 +691,9 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const accuracyValue = recentLogs.length > 0 ? (successfulRecentLogs / recentLogs.length) * 100 : 0
   const activeCamerasCount = cameras.filter(camera => camera.is_active).length
   const offlineCamerasCount = Math.max(cameras.length - activeCamerasCount, 0)
+  const usersWithoutCameraAccessCount = faces.filter(face => !face.allowed_cameras || face.allowed_cameras.length === 0).length
   const companyNameCount = new Set(adminAccounts.map(admin => admin.company_name).filter(Boolean)).size
-  const companyCount = companies.length || companyNameCount
+  const companyAccountsCount = adminAccounts.length + faces.length
   const recognitionDelta = yesterdayLogsCount > 0
     ? `${todayLogs.length >= yesterdayLogsCount ? '+' : ''}${Math.round(((todayLogs.length - yesterdayLogsCount) / yesterdayLogsCount) * 100)}% к вчера`
     : `${yesterdayLogsCount} вчера`
@@ -722,7 +703,9 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     { label: 'Распознаваний сегодня', value: String(todayLogs.length), delta: recognitionDelta, icon: '🔍', color: '#0ea5e9' },
     { label: 'Точность системы', value: `${accuracyValue.toFixed(1)}%`, delta: 'Последние 7 дней', icon: '🎯', color: '#10b981' },
     { label: 'Активных камер', value: `${activeCamerasCount} / ${cameras.length}`, icon: '📷', delta: `${offlineCamerasCount} офлайн`, color: '#f59e0b' },
-    ...(isSuperAdmin ? [{ label: 'Компаний', value: String(companyCount), icon: '🏢', delta: 'Всего организаций', color: '#0d9488' }] : []),
+    ...(isSuperAdmin ? [{ label: 'Компаний', value: String(companyNameCount), icon: '🏢', delta: 'Всего организаций', color: '#0d9488' }] : []),
+    ...((isSuperAdmin || isCompanyAdmin) ? [{ label: 'Неактивных пользователей', value: String(usersWithoutCameraAccessCount), icon: '🚫', delta: 'Без доступа к камерам', color: '#ef4444' }] : []),
+    ...(isSuperAdmin ? [{ label: 'Аккаунтов компании', value: String(companyAccountsCount), icon: '🏢', delta: 'Админы и пользователи', color: '#0d9488' }] : []),
   ]
 
   const hourlyActivity = Array.from({ length: 12 }, (_, index) => {
@@ -804,14 +787,6 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 <div style={S.statDelta}>{st.delta}</div>
               </div>
             ))}
-            {canViewCompanyUsers && (
-              <div style={S.statCard}>
-                <div style={S.statIcon}>🏢</div>
-                <div style={{ ...S.statValue, color: '#0d9488' }}>{companyUsers.length}</div>
-                <div style={S.statLabel}>Аккаунтов компании</div>
-                <div style={S.statDelta}>Админы и пользователи</div>
-              </div>
-            )}
           </div>
 
           <div style={S.grid2}>
@@ -1558,6 +1533,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                     background: '#fff', color: '#0d1b4b'
                   }}
                 >
+                  <option value="" disabled>-</option>
                   {uniqueRoles.map(r => (
                     <option key={r} value={r}>{r}</option>
                   ))}
@@ -1584,6 +1560,11 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748b', marginBottom: 6 }}>
                   Доступ к камерам
                 </label>
+                {cameras.length > 0 && selectedCameras.length === 0 && (
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                    Камеры не выбраны — пользователь будет создан без доступа к камерам.
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {cameras.map(c => (
                     <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#0d1b4b', cursor: 'pointer' }}>
@@ -1597,9 +1578,6 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                         style={{ cursor: 'pointer' }}
                       />
                       {c.username}
-                      {c.id === cameras[0]?.id && selectedCameras.length === 0 && (
-                        <span style={{ fontSize: 11, color: '#94a3b8' }}>(По умолчанию)</span>
-                      )}
                     </label>
                   ))}
                 </div>
@@ -1614,10 +1592,10 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 </button>
                 <button
                   onClick={handleAddFace}
-                  disabled={addingFace || !newFaceName || (newFaceRole === 'Другое...' && !customRole)}
+                  disabled={addingFace || !newFaceName || !newFaceRole || (newFaceRole === 'Другое...' && !customRole.trim())}
                   style={{
                     ...S.primaryMiniBtn, flex: 1, padding: '9px', fontSize: 14,
-                    opacity: (!newFaceName || addingFace || (newFaceRole === 'Другое...' && !customRole)) ? 0.6 : 1
+                    opacity: (!newFaceName || !newFaceRole || addingFace || (newFaceRole === 'Другое...' && !customRole.trim())) ? 0.6 : 1
                   }}
                 >
                   {addingFace ? 'Секунду...' : 'Сохранить'}

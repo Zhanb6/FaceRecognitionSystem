@@ -191,3 +191,7 @@ python3 create_superuser.py
 - [frontend/src/Dashboard.tsx] — made company-count loading non-blocking and added an admin-company fallback so stale backends do not show `Not Found`.
 - [frontend/src/Dashboard.tsx] — fixed user edit role selection to preserve custom roles and allow changing to a new custom role.
 - [frontend/src/Dashboard.tsx] — unified add/edit user role options so `Работник` is available in both forms.
+- [frontend/src/Dashboard.tsx] — allowed creating users without camera access by removing the automatic first-camera assignment.
+- [frontend/src/Dashboard.tsx] — changed the add-user role default to `-` and required an explicit role selection before saving.
+- [frontend/src/Dashboard.tsx] — limited the company-account count to superadmins and added an inactive-user count for profiles without camera access.
+- [frontend/src/Dashboard.tsx] — removed superadmin overview requests to `/api/auth/users/` and `/api/auth/companies/` to avoid stale-backend 400/404 console errors.
