@@ -41,52 +41,14 @@ npm run dev
 
 Открыть: `http://127.0.0.1:5173/`
 
-# Auth Setup Guide
-
-## 1. Install dependencies
+### Создание суперпользователя
 
 ```bash
-pip install djangorestframework djangorestframework-simplejwt django-cors-headers
+cd face_recognition_system
+python3 create_superuser.py
 ```
 
-## 2. Create the accounts app (if not yet)
-
-```bash
-python manage.py startapp accounts
-```
-
-## 3. Copy files into your project
-
-```
-accounts/
-  models.py        ← Custom user model
-  serializers.py   ← Register + Login serializers
-  views.py         ← API views
-  urls.py          ← Auth URL routes
-```
-
-## 4. Update settings.py
-
-Copy everything from `settings_additions.py` into your `core/settings.py`.
-
-## 5. Update core/urls.py
-
-```python
-path("api/auth/", include("accounts.urls")),
-```
-
-## 6. Run migrations
-
-```bash
-python manage.py makemigrations accounts
-python manage.py migrate
-```
-
-## 7. Create a superuser (optional)
-
-```bash
-python manage.py createsuperuser
-```
+В production задайте `SECRET_KEY` и, при необходимости, `DATABASE_URL`.
 
 ---
 
@@ -98,6 +60,12 @@ python manage.py createsuperuser
 | POST   | /api/auth/login/           | No     | Login (username OR email)          |
 | POST   | /api/auth/token/refresh/   | No     | Refresh access token               |
 | GET    | /api/auth/profile/         | Yes    | Get current user info              |
+| GET    | /api/auth/faces/all_faces/ | Yes    | List visible face profiles         |
+| POST   | /api/auth/faces/           | Yes    | Create a face profile              |
+| PATCH  | /api/auth/faces/{id}/      | Yes    | Update a face profile              |
+| DELETE | /api/auth/faces/{id}/      | Yes    | Delete a face profile              |
+| GET    | /api/auth/cameras/         | Yes    | List camera accounts               |
+| POST   | /api/auth/cameras/create/  | Yes    | Create a camera account            |
 
 ---
 
@@ -116,9 +84,17 @@ POST /api/auth/register/
 Response 201:
 {
   "message": "Registration successful.",
-  "user": { "id": 1, "username": "john", "email": "john@example.com" },
-  "tokens": { "access": "...", "refresh": "..." },
-  "redirect": "/dashboard"
+  "user": {
+    "id": 1,
+    "username": "john",
+    "email": "john@example.com",
+    "is_staff": false,
+    "is_camera": false,
+    "role": "user",
+    "company": null,
+    "company_name": null
+  },
+  "tokens": { "access": "...", "refresh": "..." }
 }
 ```
 
@@ -134,8 +110,7 @@ Response 200:
 {
   "message": "Login successful.",
   "user": { ... },
-  "tokens": { "access": "...", "refresh": "..." },
-  "redirect": "/dashboard"
+  "tokens": { "access": "...", "refresh": "..." }
 }
 ```
 
@@ -158,7 +133,7 @@ const res = await fetch('/api/auth/login/', {
 const data = await res.json();
 localStorage.setItem('access', data.tokens.access);
 localStorage.setItem('refresh', data.tokens.refresh);
-navigate(data.redirect);  // redirect to /dashboard
+localStorage.setItem('user_data', JSON.stringify(data.user));
 
 // Authenticated request
 const profile = await fetch('/api/auth/profile/', {

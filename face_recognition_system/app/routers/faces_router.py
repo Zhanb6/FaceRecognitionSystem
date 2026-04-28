@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import CustomUser, PersonFace, person_face_cameras
-from ..schemas import PersonFaceCreate, PersonFaceUpdate, PersonFaceOut
+from ..models import CustomUser, PersonFace
+from ..schemas import PersonFaceCreate, PersonFaceUpdate
 from ..auth import get_current_user
 from ..utils import is_super_admin, can_manage_faces, log_action
 
@@ -46,6 +46,14 @@ def _get_faces_queryset(user: CustomUser, db: Session):
         .order_by(PersonFace.created_at.desc())
         .all()
     )
+
+
+def _can_access_face(user: CustomUser, face: PersonFace) -> bool:
+    if is_super_admin(user):
+        return True
+    if user.is_camera:
+        return face.company_id == user.company_id and user in face.allowed_cameras
+    return face.company_id == user.company_id
 
 
 @router.get("/all_faces/")
@@ -88,7 +96,7 @@ def create_face(
     # Link cameras
     if body.allowed_cameras:
         for cam_id in body.allowed_cameras:
-            cam = db.query(CustomUser).filter(CustomUser.id == cam_id, CustomUser.is_camera == True).first()
+            cam = db.query(CustomUser).filter(CustomUser.id == cam_id, CustomUser.is_camera.is_(True)).first()
             if cam:
                 face.allowed_cameras.append(cam)
 
@@ -113,10 +121,12 @@ def get_face(
     face = db.query(PersonFace).filter(PersonFace.id == face_id).first()
     if not face:
         raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_access_face(current_user, face):
+        raise HTTPException(status_code=403, detail="Forbidden for this company")
     return _face_out(face)
 
 
-@router.put("/{face_id}/")
+@router.api_route("/{face_id}/", methods=["PUT", "PATCH"])
 def update_face(
     face_id: int,
     body: PersonFaceUpdate,
@@ -129,6 +139,8 @@ def update_face(
     face = db.query(PersonFace).filter(PersonFace.id == face_id).first()
     if not face:
         raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_access_face(current_user, face):
+        raise HTTPException(status_code=403, detail="Forbidden for this company")
 
     old_name = face.full_name
     if body.full_name is not None:
@@ -138,7 +150,7 @@ def update_face(
     if body.allowed_cameras is not None:
         face.allowed_cameras.clear()
         for cam_id in body.allowed_cameras:
-            cam = db.query(CustomUser).filter(CustomUser.id == cam_id, CustomUser.is_camera == True).first()
+            cam = db.query(CustomUser).filter(CustomUser.id == cam_id, CustomUser.is_camera.is_(True)).first()
             if cam:
                 face.allowed_cameras.append(cam)
 
@@ -161,6 +173,8 @@ def delete_face(
     face = db.query(PersonFace).filter(PersonFace.id == face_id).first()
     if not face:
         raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_access_face(current_user, face):
+        raise HTTPException(status_code=403, detail="Forbidden for this company")
 
     name = face.full_name
     db.delete(face)

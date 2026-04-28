@@ -2,18 +2,15 @@ import { useState, useRef, useCallback } from 'react'
 import type { FC, CSSProperties, ChangeEvent, KeyboardEvent } from 'react'
 import aituLogo from './assets/aitu_logo.png'
 import Dashboard from './Dashboard'
-
-const API = ''
+import { apiRequest, getErrorMessage, toJsonBody } from './api'
+import type { AuthResponse, AuthUser } from './types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type AuthStep = 'LOGIN' | 'ECP'
 type TabType = 'AUTH' | 'REGISTER'
-type FormSwitch = 'AUTH' | 'REGISTER' | 'FORGOT_PASSWORD'
 
 interface AuthFormProps {
   fetchingAuth?: boolean
   setFetchingAuth?: (val: boolean) => void
-  setFormSwitch?: (val: FormSwitch) => void
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -318,19 +315,24 @@ const PasswordInput: FC<PwInputProps> = ({ value, placeholder, onChange, onKeyDo
 const AuthForm: FC<AuthFormProps> = ({
   fetchingAuth = false,
   setFetchingAuth = () => {},
-  setFormSwitch = () => {},
 }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('access'))
-  const [user, setUser] = useState<any>(() => {
+  const [user, setUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem('user_data')
-    return saved ? JSON.parse(saved) : null
+    if (!saved) return null
+    try {
+      return JSON.parse(saved) as AuthUser
+    } catch {
+      localStorage.removeItem('user_data')
+      return null
+    }
   })
   const [loggedUsername, setLoggedUsername] = useState(() => localStorage.getItem('username') || 'Admin')
   const [tab, setTab] = useState<TabType>('AUTH')
-  const [authStep, setAuthStep] = useState<AuthStep>('LOGIN')
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [authStatus, setAuthStatus] = useState<boolean | null>(null)
+  const [authError, setAuthError] = useState('Неверный логин или пароль')
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [loginShake, setLoginShake] = useState(false)
   const [passwordShake, setPasswordShake] = useState(false)
@@ -361,28 +363,25 @@ const AuthForm: FC<AuthFormProps> = ({
     try {
       setFetchingAuth(true)
       setAuthStatus(null)
+      setAuthError('Неверный логин или пароль')
       setSuccessMsg(null)
-      const res = await fetch(`${API}/api/auth/login/`, {
+      const data = await apiRequest<AuthResponse>('/api/auth/login/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ login, password }),
+        body: toJsonBody({ login, password }),
       })
-      const data = await res.json()
-      if (res.ok) {
-        localStorage.setItem('access', data.tokens.access)
-        localStorage.setItem('refresh', data.tokens.refresh)
-        localStorage.setItem('user_data', JSON.stringify(data.user))
-        const uname = data.user?.username || login
-        localStorage.setItem('username', uname)
-        setUser(data.user)
-        setLoggedUsername(uname)
-        setAuthStatus(true)
-        setSuccessMsg('Вход выполнен успешно!')
-        setTimeout(() => setIsLoggedIn(true), 600)
-      } else {
-        setAuthStatus(false)
-      }
-    } catch {
+      localStorage.setItem('access', data.tokens.access)
+      localStorage.setItem('refresh', data.tokens.refresh)
+      localStorage.setItem('user_data', JSON.stringify(data.user))
+      const uname = data.user?.username || login
+      localStorage.setItem('username', uname)
+      setUser(data.user)
+      setLoggedUsername(uname)
+      setAuthStatus(true)
+      setSuccessMsg('Вход выполнен успешно!')
+      setTimeout(() => setIsLoggedIn(true), 600)
+    } catch (error) {
+      console.error('Login failed:', error)
+      setAuthError(getErrorMessage(error, 'Неверный логин или пароль'))
       setAuthStatus(false)
     } finally {
       setFetchingAuth(false)
@@ -394,34 +393,29 @@ const AuthForm: FC<AuthFormProps> = ({
     if (regPassword !== regPassword2) { setRegError('Пароли не совпадают'); return }
     setRegLoading(true)
     try {
-      const res = await fetch(`${API}/api/auth/register/`, {
+      const data = await apiRequest<AuthResponse>('/api/auth/register/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: regUsername, email: regEmail, password: regPassword, password_confirm: regPassword2 }),
+        body: toJsonBody({ username: regUsername, email: regEmail, password: regPassword, password_confirm: regPassword2 }),
       })
-      const data = await res.json()
-      if (res.ok) {
-        localStorage.setItem('access', data.tokens.access)
-        localStorage.setItem('refresh', data.tokens.refresh)
-        localStorage.setItem('user_data', JSON.stringify(data.user))
-        const uname = data.user?.username || regUsername
-        localStorage.setItem('username', uname)
-        setUser(data.user)
-        setLoggedUsername(uname)
-        setRegSuccess('Регистрация прошла успешно!')
-        setTimeout(() => setIsLoggedIn(true), 800)
-      } else {
-        setRegError(Object.values(data).flat().join(' ') || 'Ошибка регистрации')
-      }
-    } catch {
-      setRegError('Ошибка соединения с сервером')
+      localStorage.setItem('access', data.tokens.access)
+      localStorage.setItem('refresh', data.tokens.refresh)
+      localStorage.setItem('user_data', JSON.stringify(data.user))
+      const uname = data.user?.username || regUsername
+      localStorage.setItem('username', uname)
+      setUser(data.user)
+      setLoggedUsername(uname)
+      setRegSuccess('Регистрация прошла успешно!')
+      setTimeout(() => setIsLoggedIn(true), 800)
+    } catch (error) {
+      console.error('Registration failed:', error)
+      setRegError(getErrorMessage(error, 'Ошибка соединения с сервером'))
     } finally {
       setRegLoading(false)
     }
   }
 
   const resetToLogin = () => {
-    setLogin(''); setPassword(''); setAuthStep('LOGIN')
+    setLogin(''); setPassword('')
     setAuthStatus(null); setSuccessMsg(null)
   }
 
@@ -500,93 +494,72 @@ const AuthForm: FC<AuthFormProps> = ({
               {/* ── AUTH TAB ─────────────────────────────── */}
               {tab === 'AUTH' && (
                 <div className="frs-panel-animate">
-                  {authStep === 'LOGIN' && (
-                    <>
-                      <div style={S.fieldWrap}>
-                        <span style={S.floatLabel}>Логин</span>
-                        <input
-                          ref={loginRef}
-                          className={`frs-input${loginShake ? ' error-shake' : ''}`}
-                          style={S.input}
-                          type="text"
-                          value={login}
-                          placeholder="Введите имя пользователя"
-                          disabled={fetchingAuth}
-                          onChange={(e: ChangeEvent<HTMLInputElement>) => setLogin(e.target.value)}
-                          onKeyDown={onKeyEnter}
-                        />
-                      </div>
+                  <div style={S.fieldWrap}>
+                    <span style={S.floatLabel}>Логин</span>
+                    <input
+                      ref={loginRef}
+                      className={`frs-input${loginShake ? ' error-shake' : ''}`}
+                      style={S.input}
+                      type="text"
+                      value={login}
+                      placeholder="Введите имя пользователя"
+                      disabled={fetchingAuth}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) => setLogin(e.target.value)}
+                      onKeyDown={onKeyEnter}
+                    />
+                  </div>
 
-                      <div style={S.fieldWrap}>
-                        <span style={S.floatLabel}>Пароль</span>
-                        <PasswordInput
-                          value={password}
-                          placeholder="Введите пароль"
-                          onChange={(e) => setPassword(e.target.value)}
-                          onKeyDown={onKeyEnter}
-                          shake={passwordShake}
-                          disabled={fetchingAuth}
-                        />
-                      </div>
+                  <div style={S.fieldWrap}>
+                    <span style={S.floatLabel}>Пароль</span>
+                    <PasswordInput
+                      value={password}
+                      placeholder="Введите пароль"
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyDown={onKeyEnter}
+                      shake={passwordShake}
+                      disabled={fetchingAuth}
+                    />
+                  </div>
 
-                      {authStatus === false && (
-                        <div style={S.alertBox}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                          </svg>
-                          Неверный логин или пароль
-                        </div>
-                      )}
-                      {successMsg && (
-                        <div style={S.successBox}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                          {successMsg}
-                        </div>
-                      )}
-
-                      <button
-                        className="frs-btn-primary"
-                        style={{
-                          ...S.btnPrimary,
-                          ...((!isLoginReady || fetchingAuth) ? S.btnPrimaryDisabled : {}),
-                        }}
-                        disabled={!isLoginReady || fetchingAuth}
-                        onClick={handleLogin}
-                      >
-                        {fetchingAuth && <span style={S.spinner} />}
-                        Войти
-                      </button>
-
-                      <div style={S.forgotRow}>
-                        <button style={S.btnLink} onClick={() => setFormSwitch('FORGOT_PASSWORD')}>
-                          Забыли пароль?
-                        </button>
-                      </div>
-                    </>
+                  {authStatus === false && (
+                    <div style={S.alertBox}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                      {authError}
+                    </div>
+                  )}
+                  {successMsg && (
+                    <div style={S.successBox}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      {successMsg}
+                    </div>
                   )}
 
-                  {authStep === 'ECP' && (
-                    <>
-                      <p style={S.ecpInfo}>
-                        Для завершения входа выберите сертификат ЭЦП
-                      </p>
-                      <button
-                        className="frs-btn-primary"
-                        style={S.btnPrimary}
-                        onClick={() => { /* NCALayer integration */ }}
-                      >
-                        {fetchingAuth && <span style={S.spinner} />}
-                        Выбрать сертификат ЭЦП
-                      </button>
-                      <div style={S.cancelRow}>
-                        <button style={S.btnLink} onClick={resetToLogin}>
-                          Отменить вход
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  <button
+                    className="frs-btn-primary"
+                    style={{
+                      ...S.btnPrimary,
+                      ...((!isLoginReady || fetchingAuth) ? S.btnPrimaryDisabled : {}),
+                    }}
+                    disabled={!isLoginReady || fetchingAuth}
+                    onClick={handleLogin}
+                  >
+                    {fetchingAuth && <span style={S.spinner} />}
+                    Войти
+                  </button>
+
+                  <div style={S.forgotRow}>
+                    <button
+                      style={{ ...S.btnLink, opacity: 0.5, cursor: 'not-allowed' }}
+                      disabled
+                      title="Восстановление пароля пока не реализовано на сервере"
+                    >
+                      Забыли пароль?
+                    </button>
+                  </div>
                 </div>
               )}
 

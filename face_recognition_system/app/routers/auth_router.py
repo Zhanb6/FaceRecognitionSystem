@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import CustomUser, RoleEnum
-from ..schemas import RegisterRequest, LoginRequest, TokenRefreshRequest, UserOut, AuthResponse, TokenPair
+from ..schemas import RegisterRequest, LoginRequest, TokenRefreshRequest
 from ..auth import hash_password, verify_password, get_tokens_for_user, decode_token, create_access_token, get_current_user
 from ..utils import log_action
 

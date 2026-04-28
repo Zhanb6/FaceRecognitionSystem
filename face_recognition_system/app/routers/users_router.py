@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import CustomUser, Company, RoleEnum
-from ..schemas import CreateAdminRequest, CreateCompanyAdminRequest, CreateCompanyUserRequest, UserOut
+from ..schemas import CreateAdminRequest, CreateCompanyAdminRequest, CreateCompanyUserRequest
 from ..auth import get_current_user, hash_password
 from ..utils import is_super_admin, is_company_admin, get_request_company, log_action
 
@@ -46,7 +46,7 @@ def list_company_users(
         db.query(CustomUser)
         .filter(
             CustomUser.company_id == company.id,
-            CustomUser.is_camera == False,
+            CustomUser.is_camera.is_(False),
             CustomUser.role != RoleEnum.SUPERADMIN,
         )
         .order_by(CustomUser.date_joined)

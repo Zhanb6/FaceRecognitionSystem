@@ -68,6 +68,9 @@ def create_log(
     current_user: CustomUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not current_user.is_camera:
+        raise HTTPException(status_code=403, detail="Only camera accounts can create recognition logs")
+
     log = RecognitionLog(
         camera_account_id=current_user.id,
         person_id=body.person,

@@ -1,70 +1,15 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import type { FC, CSSProperties, ReactNode } from 'react'
-
-const API = ''
+import { ApiError, apiRequest, getErrorMessage, toJsonBody } from './api'
+import type { AdminAccount, AuditEntry, AuthUser, CameraAcc, CompanyUser, Face, RecognitionLog } from './types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NavPage = 'overview' | 'users' | 'recognition' | 'cameras' | 'settings' | 'history'
 
 interface DashboardProps {
   username?: string
-  user?: {
-    id: number;
-    username: string;
-    is_staff: boolean;
-    is_camera: boolean;
-    role?: 'superadmin' | 'admin' | 'user' | 'camera';
-  }
+  user: AuthUser | null
   onLogout: () => void
-}
-
-interface Face {
-  id: number
-  full_name: string
-  role: string
-  created_at: string
-  allowed_cameras?: number[]
-}
-
-interface RecognitionLog {
-  id: number
-  person_name: string | null
-  unknown_face: boolean
-  confidence: number
-  timestamp: string
-}
-
-interface CameraAcc {
-  id: number
-  username: string
-  is_active: boolean
-  date_joined: string
-  owner_id?: number | null
-  owner__username?: string | null
-}
-
-interface AuditEntry {
-  id: number
-  username: string
-  action: string
-  details: string
-  timestamp: string
-}
-
-interface CompanyUser {
-  id: number
-  username: string
-  email: string
-  role: 'superadmin' | 'admin' | 'user' | 'camera'
-  company: number | null
-  company_name?: string
-}
-
-interface AdminAccount {
-  id: number
-  username: string
-  email: string
-  company_name?: string
 }
 
 // ── Mock data (Stats remain static for now) ───────────────────────────────────
@@ -351,6 +296,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     threshold: '85',
   })
   const [searchUser, setSearchUser] = useState('')
+  const [recognitionFilter, setRecognitionFilter] = useState<'all' | 'known' | 'unknown'>('all')
 
   const initial = username.charAt(0).toUpperCase()
   const role = user?.role
@@ -394,6 +340,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [requestError, setRequestError] = useState('')
   const [adminSearch, setAdminSearch] = useState('')
   const [adminCameraFilter, setAdminCameraFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [dashboardError, setDashboardError] = useState('')
 
   // Hover state for face cards
   const [hoveredCardKey, setHoveredCardKey] = useState<string | null>(null)
@@ -410,65 +357,48 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [editCams, setEditCams] = useState<number[]>([])
   const [updatingFace, setUpdatingFace] = useState(false)
 
-  const fetchDashboardData = async () => {
-    const token = localStorage.getItem('access')
-    if (!token) return
-
-    const headers = {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-
+  const fetchDashboardData = useCallback(async (signal?: AbortSignal) => {
     try {
-      const requests: Promise<Response>[] = [
-        fetch(`${API}/api/auth/faces/all_faces/`, { headers }),
-        fetch(`${API}/api/auth/logs/all_logs/`, { headers }),
-        fetch(`${API}/api/auth/cameras/`, { headers }),
-      ]
+      setDashboardError('')
+      const [facesData, logsData, camerasData] = await Promise.all([
+        apiRequest<Face[]>('/api/auth/faces/all_faces/', { auth: true, signal }),
+        apiRequest<RecognitionLog[]>('/api/auth/logs/all_logs/', { auth: true, signal }),
+        apiRequest<CameraAcc[]>('/api/auth/cameras/', { auth: true, signal }),
+      ])
+
+      if (signal?.aborted) return
+
+      setFaces(facesData)
+      setLogs(logsData)
+      setCameras(camerasData)
 
       if (canViewHistory) {
-        requests.push(fetch(`${API}/api/auth/audit-logs/`, { headers }))
+        setAuditLogs(await apiRequest<AuditEntry[]>('/api/auth/audit-logs/', { auth: true, signal }))
       }
+
       if (canViewCompanyUsers) {
-        requests.push(fetch(`${API}/api/auth/users/`, { headers }))
+        setCompanyUsers(await apiRequest<CompanyUser[]>('/api/auth/users/', { auth: true, signal }))
       }
+
       if (isSuperAdmin) {
-        requests.push(fetch(`${API}/api/auth/admin-users/`, { headers }))
+        setAdminAccounts(await apiRequest<AdminAccount[]>('/api/auth/admin-users/', { auth: true, signal }))
       }
-
-      const responses = await Promise.all(requests)
-      const facesRes = responses[0]
-      const logsRes = responses[1]
-      const camsRes = responses[2]
-      const optionalResponses = responses.slice(3)
-
-      if (facesRes.status === 401 || logsRes.status === 401 || camsRes.status === 401) {
+    } catch (error) {
+      if (signal?.aborted) return
+      console.error('Error fetching dashboard data:', error)
+      if (error instanceof ApiError && error.status === 401) {
         onLogout()
         return
       }
-
-      if (facesRes.ok) setFaces(await facesRes.json())
-      if (logsRes.ok) setLogs(await logsRes.json())
-      if (camsRes.ok) setCameras(await camsRes.json())
-
-      for (const res of optionalResponses) {
-        if (!res.ok) continue
-        if (res.url.includes('/audit-logs/')) {
-          setAuditLogs(await res.json())
-        } else if (res.url.endsWith('/api/auth/users/')) {
-          setCompanyUsers(await res.json())
-        } else if (res.url.endsWith('/api/auth/admin-users/')) {
-          setAdminAccounts(await res.json())
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching dashboard data:', e)
+      setDashboardError(getErrorMessage(error, 'Не удалось загрузить данные панели'))
     }
-  }
+  }, [canViewCompanyUsers, canViewHistory, isSuperAdmin, onLogout])
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    const controller = new AbortController()
+    fetchDashboardData(controller.signal)
+    return () => controller.abort()
+  }, [fetchDashboardData])
 
   const handleAddFace = async () => {
     if (!canManageFaces) return
@@ -477,32 +407,28 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     if (!finalRole) return
 
     setAddingFace(true)
-    const token = localStorage.getItem('access')
     const finalCameras = selectedCameras.length > 0 ? selectedCameras : (cameras.length > 0 ? [cameras[0].id] : [])
 
     try {
-      const res = await fetch(`${API}/api/auth/faces/`, {
+      setDashboardError('')
+      await apiRequest<Face>('/api/auth/faces/', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+        auth: true,
+        body: toJsonBody({
           full_name: newFaceName,
           role: finalRole,
           allowed_cameras: finalCameras
         })
       })
-      if (res.ok) {
-        setShowAddModal(false)
-        setNewFaceName('')
-        setNewFaceRole(finalRole)
-        setCustomRole('')
-        setSelectedCameras([])
-        fetchDashboardData()
-      }
-    } catch (e) {
-      console.error("Error adding face", e)
+      setShowAddModal(false)
+      setNewFaceName('')
+      setNewFaceRole(finalRole)
+      setCustomRole('')
+      setSelectedCameras([])
+      fetchDashboardData()
+    } catch (error) {
+      console.error("Error adding face", error)
+      setDashboardError(getErrorMessage(error, 'Не удалось добавить пользователя'))
     } finally {
       setAddingFace(false)
     }
@@ -512,30 +438,23 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     if (!canManageCameras) return
     if (!newCamUser || !newCamPass) return
     setCreatingCam(true)
-    const token = localStorage.getItem('access')
     try {
-      const resp = await fetch(`${API}/api/auth/cameras/create/`, {
+      setDashboardError('')
+      await apiRequest('/api/auth/cameras/create/', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+        auth: true,
+        body: toJsonBody({
           username: newCamUser,
           password: newCamPass
         })
       })
-      if (resp.ok) {
-        setShowAddCamModal(false)
-        setNewCamUser('')
-        setNewCamPass('')
-        fetchDashboardData()
-      } else {
-        const err = await resp.json()
-        alert(err.error || 'Ошибка при создании камеры')
-      }
-    } catch (e) {
-      console.error('Error creating camera:', e)
+      setShowAddCamModal(false)
+      setNewCamUser('')
+      setNewCamPass('')
+      fetchDashboardData()
+    } catch (error) {
+      console.error('Error creating camera:', error)
+      setDashboardError(getErrorMessage(error, 'Ошибка при создании камеры'))
     } finally {
       setCreatingCam(false)
     }
@@ -543,18 +462,17 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const handleDeleteFace = async (id: number) => {
     if (!canManageFaces) return
     if (!confirm('Вы уверены, что хотите удалить этого пользователя?')) return
-    const token = localStorage.getItem('access')
     try {
-      const res = await fetch(`${API}/api/auth/faces/${id}/`, {
+      setDashboardError('')
+      await apiRequest<null>(`/api/auth/faces/${id}/`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        auth: true,
       })
-      if (res.ok) {
-        setFaces(faces.filter(f => f.id !== (id as any)))
-        fetchDashboardData()
-      }
-    } catch (e) {
-      console.error("Error deleting face", e)
+      setFaces(faces.filter(f => f.id !== id))
+      fetchDashboardData()
+    } catch (error) {
+      console.error("Error deleting face", error)
+      setDashboardError(getErrorMessage(error, 'Не удалось удалить пользователя'))
     }
   }
 
@@ -562,26 +480,22 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     if (!canManageFaces) return
     if (!editFaceModal) return
     setUpdatingFace(true)
-    const token = localStorage.getItem('access')
     try {
-      const res = await fetch(`${API}/api/auth/faces/${editFaceModal.id}/`, {
+      setDashboardError('')
+      await apiRequest<Face>(`/api/auth/faces/${editFaceModal.id}/`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+        auth: true,
+        body: toJsonBody({
           full_name: editName,
           role: editRole,
           allowed_cameras: editCams
         })
       })
-      if (res.ok) {
-        setEditFaceModal(null)
-        fetchDashboardData()
-      }
-    } catch (e) {
-      console.error("Error updating face", e)
+      setEditFaceModal(null)
+      fetchDashboardData()
+    } catch (error) {
+      console.error("Error updating face", error)
+      setDashboardError(getErrorMessage(error, 'Не удалось обновить пользователя'))
     } finally {
       setUpdatingFace(false)
     }
@@ -590,29 +504,19 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const handleRemoveFaceFromCamera = async (camId: number, faceId: number) => {
     if (!canManageCameras) return
     if (!confirm('Вы уверены, что хотите убрать доступ для этого пользователя?')) return
-    const token = localStorage.getItem('access')
     try {
-      const res = await fetch(`${API}/api/auth/cameras/${camId}/remove_face/`, {
+      setDashboardError('')
+      await apiRequest(`/api/auth/cameras/${camId}/remove_face/`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ face_id: faceId })
+        auth: true,
+        body: toJsonBody({ face_id: faceId })
       })
-      if (res.ok) {
-        // Refresh this camera's faces in the map
-        const resFaces = await fetch(`${API}/api/auth/cameras/${camId}/faces/`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        if (resFaces.ok) {
-          const data = await resFaces.json()
-          setCameraFacesMap(prev => ({ ...prev, [camId]: data }))
-        }
-        fetchDashboardData()
-      }
-    } catch (e) {
-      console.error("Error removing face from camera", e)
+      const data = await apiRequest<Face[]>(`/api/auth/cameras/${camId}/faces/`, { auth: true })
+      setCameraFacesMap(prev => ({ ...prev, [camId]: data }))
+      fetchDashboardData()
+    } catch (error) {
+      console.error("Error removing face from camera", error)
+      setDashboardError(getErrorMessage(error, 'Не удалось убрать пользователя из камеры'))
     }
   }
 
@@ -625,18 +529,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
     setExpandedCameraIds(prev => [...prev, cam.id])
     setCameraLoadingMap(prev => ({ ...prev, [cam.id]: true }))
-    const token = localStorage.getItem('access')
-    if (!token) return
     try {
-      const res = await fetch(`${API}/api/auth/cameras/${cam.id}/faces/`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setCameraFacesMap(prev => ({ ...prev, [cam.id]: data }))
-      }
-    } catch (e) {
-      console.error('Error fetching camera faces', e)
+      setDashboardError('')
+      const data = await apiRequest<Face[]>(`/api/auth/cameras/${cam.id}/faces/`, { auth: true })
+      setCameraFacesMap(prev => ({ ...prev, [cam.id]: data }))
+    } catch (error) {
+      console.error('Error fetching camera faces', error)
+      setDashboardError(getErrorMessage(error, 'Не удалось загрузить пользователей камеры'))
     } finally {
       setCameraLoadingMap(prev => ({ ...prev, [cam.id]: false }))
     }
@@ -646,33 +545,23 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     if (!canManageCameras) return
     if (!addExistingFaceModal || !selectedFaceToAdd) return
     setAddingExistingFace(true)
-    const token = localStorage.getItem('access')
-    if (!token) return
     try {
-      const res = await fetch(`${API}/api/auth/cameras/${addExistingFaceModal.id}/add_face/`, {
+      setDashboardError('')
+      await apiRequest(`/api/auth/cameras/${addExistingFaceModal.id}/add_face/`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ face_id: parseInt(selectedFaceToAdd) })
+        auth: true,
+        body: toJsonBody({ face_id: parseInt(selectedFaceToAdd) })
       })
-      if (res.ok) {
-        if (expandedCameraIds.includes(addExistingFaceModal.id)) {
-          const resFaces = await fetch(`${API}/api/auth/cameras/${addExistingFaceModal.id}/faces/`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          })
-          if (resFaces.ok) {
-            const data = await resFaces.json()
-            setCameraFacesMap(prev => ({ ...prev, [(addExistingFaceModal as CameraAcc).id]: data }))
-          }
-        }
-        setAddExistingFaceModal(null)
-        setSelectedFaceToAdd('')
-        fetchDashboardData()
+      if (expandedCameraIds.includes(addExistingFaceModal.id)) {
+        const data = await apiRequest<Face[]>(`/api/auth/cameras/${addExistingFaceModal.id}/faces/`, { auth: true })
+        setCameraFacesMap(prev => ({ ...prev, [addExistingFaceModal.id]: data }))
       }
-    } catch (e) {
-      console.error('Error adding existing face', e)
+      setAddExistingFaceModal(null)
+      setSelectedFaceToAdd('')
+      fetchDashboardData()
+    } catch (error) {
+      console.error('Error adding existing face', error)
+      setDashboardError(getErrorMessage(error, 'Не удалось добавить пользователя в камеру'))
     } finally {
       setAddingExistingFace(false)
     }
@@ -682,6 +571,40 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     f.full_name.toLowerCase().includes(searchUser.toLowerCase()) ||
     f.role.toLowerCase().includes(searchUser.toLowerCase())
   )
+
+  const filteredLogs = logs.filter(log => {
+    if (recognitionFilter === 'known') return !log.unknown_face
+    if (recognitionFilter === 'unknown') return log.unknown_face
+    return true
+  })
+
+  const handleCycleRecognitionFilter = () => {
+    setRecognitionFilter(current => {
+      if (current === 'all') return 'known'
+      if (current === 'known') return 'unknown'
+      return 'all'
+    })
+  }
+
+  const handleExportLogsCsv = () => {
+    const header = ['id', 'person_name', 'timestamp', 'confidence', 'status']
+    const rows = filteredLogs.map(log => [
+      log.id,
+      log.person_name || 'Неизвестный',
+      log.timestamp,
+      log.confidence.toFixed(1),
+      log.unknown_face ? 'unknown' : 'success',
+    ])
+    const escapeCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`
+    const csv = [header, ...rows].map(row => row.map(escapeCell).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `recognition-logs-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   const filteredAdminAccounts = adminAccounts
     .filter(a => {
@@ -703,33 +626,23 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
     setCreatingRequest(true)
     setRequestError('')
-    const token = localStorage.getItem('access')
     try {
-      const res = await fetch(`${API}/api/auth/admin-users/`, {
+      await apiRequest('/api/auth/admin-users/', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+        auth: true,
+        body: toJsonBody({
           username: requestLogin,
           password: requestPassword,
         })
       })
 
-      const data = await res.json()
-      if (!res.ok) {
-        setRequestError(data.error || 'Ошибка создания заявки')
-        return
-      }
-
       setRequestLogin('')
       setRequestPassword('')
       setShowRequestModal(false)
       fetchDashboardData()
-    } catch (e) {
-      console.error('Error creating admin request:', e)
-      setRequestError('Ошибка соединения с сервером')
+    } catch (error) {
+      console.error('Error creating admin request:', error)
+      setRequestError(getErrorMessage(error, 'Ошибка соединения с сервером'))
     } finally {
       setCreatingRequest(false)
     }
@@ -924,7 +837,11 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                     <td style={S.td}>
                       {canManageFaces ? (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button style={{ ...S.miniBtn, background: 'linear-gradient(135deg, #0a1f6b, #1a3fd4)', color: '#fff', border: 'none', fontWeight: 500 }}>
+                          <button
+                            disabled
+                            title="Face ID enrollment is not implemented in the backend"
+                            style={{ ...S.miniBtn, background: '#f1f5f9', color: '#94a3b8', border: 'none', cursor: 'not-allowed', fontWeight: 500 }}
+                          >
                             + Face ID
                           </button>
                           <button
@@ -964,8 +881,10 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
             <div style={S.cardHeader}>
               <span style={S.cardTitle}>Лог распознаваний</span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button style={S.miniBtn}>Экспорт CSV</button>
-                <button style={S.miniBtn}>Фильтр</button>
+                <button style={S.miniBtn} onClick={handleExportLogsCsv} disabled={filteredLogs.length === 0}>Экспорт CSV</button>
+                <button style={S.miniBtn} onClick={handleCycleRecognitionFilter}>
+                  {recognitionFilter === 'all' ? 'Все записи' : recognitionFilter === 'known' ? 'Только успешные' : 'Только отказы'}
+                </button>
               </div>
             </div>
             <table style={S.table}>
@@ -980,7 +899,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 </tr>
               </thead>
               <tbody>
-                {logs.map(l => (
+                {filteredLogs.map(l => (
                   <tr key={l.id}>
                     <td style={{ ...S.td, color: '#94a3b8' }}>{l.id}</td>
                     <td style={{ ...S.td, fontWeight: 500 }}>{l.person_name || 'Неизвестный'}</td>
@@ -1158,8 +1077,16 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                         <td style={S.td}>
                           <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                             {canManageCameras && <button style={S.miniBtn} onClick={() => setAddExistingFaceModal(c)}>+ Пользователь</button>}
-                            <button style={S.miniBtn}>Просмотр логов</button>
-                            {canManageCameras && <button style={S.miniBtn}>Настройки</button>}
+                            <button style={S.miniBtn} onClick={() => setPage('recognition')}>Просмотр логов</button>
+                            {canManageCameras && (
+                              <button
+                                style={{ ...S.miniBtn, opacity: 0.55, cursor: 'not-allowed' }}
+                                disabled
+                                title="Настройки камеры не реализованы в API"
+                              >
+                                Настройки
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1808,6 +1735,19 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         <main style={S.main}>
           <div style={S.pageTitle}>{PAGE_META[page].title}</div>
           <div style={S.pageSubtitle}>{PAGE_META[page].subtitle}</div>
+          {dashboardError && (
+            <div style={{
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: 8,
+              color: '#b91c1c',
+              fontSize: 13,
+              marginBottom: 16,
+              padding: '10px 12px',
+            }}>
+              {dashboardError}
+            </div>
+          )}
           {renderPage()}
         </main>
       </div>

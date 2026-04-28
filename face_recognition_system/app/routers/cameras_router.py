@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import CustomUser, PersonFace, RoleEnum
-from ..schemas import CameraCreate, AddRemoveFaceRequest, PersonFaceOut
+from ..schemas import CameraCreate, AddRemoveFaceRequest
 from ..auth import get_current_user, hash_password
 from ..utils import is_super_admin, is_company_admin, get_request_company, log_action
 
@@ -31,11 +31,11 @@ def list_cameras(
     db: Session = Depends(get_db),
 ):
     if is_super_admin(current_user):
-        cameras = db.query(CustomUser).filter(CustomUser.is_camera == True).all()
+        cameras = db.query(CustomUser).filter(CustomUser.is_camera.is_(True)).all()
     else:
         cameras = (
             db.query(CustomUser)
-            .filter(CustomUser.company_id == current_user.company_id, CustomUser.is_camera == True)
+            .filter(CustomUser.company_id == current_user.company_id, CustomUser.is_camera.is_(True))
             .all()
         )
 
@@ -105,7 +105,7 @@ def camera_faces(
     current_user: CustomUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    camera = db.query(CustomUser).filter(CustomUser.id == camera_id, CustomUser.is_camera == True).first()
+    camera = db.query(CustomUser).filter(CustomUser.id == camera_id, CustomUser.is_camera.is_(True)).first()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
 
@@ -135,7 +135,7 @@ def camera_add_face(
     if not face:
         raise HTTPException(status_code=404, detail="Face not found")
 
-    camera = db.query(CustomUser).filter(CustomUser.id == camera_id).first()
+    camera = db.query(CustomUser).filter(CustomUser.id == camera_id, CustomUser.is_camera.is_(True)).first()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
 
@@ -145,7 +145,8 @@ def camera_add_face(
     if not is_super_admin(current_user) and camera.company_id != current_user.company_id:
         raise HTTPException(status_code=403, detail="Forbidden for this company")
 
-    face.allowed_cameras.append(camera)
+    if camera not in face.allowed_cameras:
+        face.allowed_cameras.append(camera)
     db.commit()
 
     log_action(db, current_user, "Добавление в группу",
@@ -167,7 +168,7 @@ def camera_remove_face(
     if not face:
         raise HTTPException(status_code=404, detail="Face not found")
 
-    camera = db.query(CustomUser).filter(CustomUser.id == camera_id).first()
+    camera = db.query(CustomUser).filter(CustomUser.id == camera_id, CustomUser.is_camera.is_(True)).first()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
 

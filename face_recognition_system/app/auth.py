@@ -2,6 +2,7 @@
 JWT authentication helpers — replaces djangorestframework-simplejwt.
 """
 from datetime import datetime, timedelta, timezone
+import os
 from typing import Optional
 
 import bcrypt
@@ -14,7 +15,10 @@ from .database import get_db
 from .models import CustomUser
 
 # ── Config ───────────────────────────────────────────────────────────────────
-SECRET_KEY = "fastapi-insecure-abc123xyz-diploma-project-aitu-replace-in-production"
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "fastapi-insecure-abc123xyz-diploma-project-aitu-replace-in-production",
+)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_DAYS = 7
