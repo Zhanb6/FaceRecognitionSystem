@@ -178,3 +178,6 @@ python3 create_superuser.py
 - [app/routers/cameras_router.py] — replaced SQLAlchemy boolean equality comparisons with `.is_(...)`.
 - [app/routers/faces_router.py] — replaced SQLAlchemy boolean equality comparisons with `.is_(...)`.
 - [app/routers/users_router.py] — replaced SQLAlchemy boolean equality comparisons with `.is_(...)`.
+- [app/routers/users_router.py] — allowed superadmins without a company to list all non-camera company users instead of returning `Company is required`.
+- [frontend/src/Dashboard.tsx] — made optional dashboard requests independent so a users-fetch error no longer blocks the administrators list.
+- [frontend/src/Dashboard.tsx] — replaced hardcoded overview stats and activity bars with values derived from loaded faces, logs, cameras, and company users, falling back to zero when data is absent.

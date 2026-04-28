@@ -38,6 +38,18 @@ def list_company_users(
     if not (is_company_admin(current_user) or is_super_admin(current_user)):
         raise HTTPException(status_code=403, detail="Company Admin permission required")
 
+    if is_super_admin(current_user) and company_id is None:
+        users = (
+            db.query(CustomUser)
+            .filter(
+                CustomUser.is_camera.is_(False),
+                CustomUser.role != RoleEnum.SUPERADMIN,
+            )
+            .order_by(CustomUser.date_joined)
+            .all()
+        )
+        return [_user_out(u) for u in users]
+
     company = get_request_company(current_user, company_id, db)
     if not company:
         raise HTTPException(status_code=400, detail="Company is required")

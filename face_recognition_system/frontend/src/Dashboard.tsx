@@ -12,14 +12,6 @@ interface DashboardProps {
   onLogout: () => void
 }
 
-// ── Mock data (Stats remain static for now) ───────────────────────────────────
-const STATS = [
-  { label: 'Всего пользователей', value: '128', delta: '+12 за месяц', icon: '👤', color: '#1a3fd4' },
-  { label: 'Распознаваний сегодня', value: '1 042', delta: '+8% к вчера', icon: '🔍', color: '#0ea5e9' },
-  { label: 'Точность системы', value: '98.7%', delta: 'Последние 7 дней', icon: '🎯', color: '#10b981' },
-  { label: 'Активных камер', value: '6 / 8', icon: '📷', delta: '2 офлайн', color: '#f59e0b' },
-]
-
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const S: Record<string, CSSProperties> = {
   root: {
@@ -284,10 +276,6 @@ const Toggle: FC<{ on: boolean; onChange: () => void }> = ({ on, onChange }) => 
   </button>
 )
 
-// ── Bar chart (activity) ───────────────────────────────────────────────────────
-const bars = [24, 38, 55, 42, 60, 78, 95, 82, 65, 88, 70, 102]
-const hours = ['18', '19', '20', '21', '22', '23', '0', '1', '2', '3', '4', '5']
-
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) => {
   const [page, setPage] = useState<NavPage>('overview')
@@ -357,6 +345,26 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [editCams, setEditCams] = useState<number[]>([])
   const [updatingFace, setUpdatingFace] = useState(false)
 
+  const loadOptionalDashboardSection = useCallback(async <T,>(
+    request: Promise<T>,
+    apply: (data: T) => void,
+    sectionName: string,
+    signal?: AbortSignal,
+  ) => {
+    try {
+      const data = await request
+      if (!signal?.aborted) apply(data)
+    } catch (error) {
+      if (signal?.aborted) return
+      console.error(`Error fetching ${sectionName}:`, error)
+      if (error instanceof ApiError && error.status === 401) {
+        onLogout()
+        return
+      }
+      setDashboardError(prev => prev || getErrorMessage(error, `Не удалось загрузить ${sectionName}`))
+    }
+  }, [onLogout])
+
   const fetchDashboardData = useCallback(async (signal?: AbortSignal) => {
     try {
       setDashboardError('')
@@ -372,17 +380,36 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       setLogs(logsData)
       setCameras(camerasData)
 
+      const optionalRequests: Promise<void>[] = []
+
       if (canViewHistory) {
-        setAuditLogs(await apiRequest<AuditEntry[]>('/api/auth/audit-logs/', { auth: true, signal }))
+        optionalRequests.push(loadOptionalDashboardSection(
+          apiRequest<AuditEntry[]>('/api/auth/audit-logs/', { auth: true, signal }),
+          setAuditLogs,
+          'историю действий',
+          signal,
+        ))
       }
 
       if (canViewCompanyUsers) {
-        setCompanyUsers(await apiRequest<CompanyUser[]>('/api/auth/users/', { auth: true, signal }))
+        optionalRequests.push(loadOptionalDashboardSection(
+          apiRequest<CompanyUser[]>('/api/auth/users/', { auth: true, signal }),
+          setCompanyUsers,
+          'пользователей компании',
+          signal,
+        ))
       }
 
       if (isSuperAdmin) {
-        setAdminAccounts(await apiRequest<AdminAccount[]>('/api/auth/admin-users/', { auth: true, signal }))
+        optionalRequests.push(loadOptionalDashboardSection(
+          apiRequest<AdminAccount[]>('/api/auth/admin-users/', { auth: true, signal }),
+          setAdminAccounts,
+          'список администраторов',
+          signal,
+        ))
       }
+
+      await Promise.all(optionalRequests)
     } catch (error) {
       if (signal?.aborted) return
       console.error('Error fetching dashboard data:', error)
@@ -392,7 +419,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       }
       setDashboardError(getErrorMessage(error, 'Не удалось загрузить данные панели'))
     }
-  }, [canViewCompanyUsers, canViewHistory, isSuperAdmin, onLogout])
+  }, [canViewCompanyUsers, canViewHistory, isSuperAdmin, loadOptionalDashboardSection, onLogout])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -606,6 +633,56 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     URL.revokeObjectURL(url)
   }
 
+  const now = new Date()
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
+  const tomorrowStart = new Date(todayStart)
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+  const yesterdayStart = new Date(todayStart)
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+  const sevenDaysAgo = new Date(now)
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+  const todayLogs = logs.filter(log => {
+    const timestamp = new Date(log.timestamp)
+    return timestamp >= todayStart && timestamp < tomorrowStart
+  })
+  const yesterdayLogsCount = logs.filter(log => {
+    const timestamp = new Date(log.timestamp)
+    return timestamp >= yesterdayStart && timestamp < todayStart
+  }).length
+  const recentLogs = logs.filter(log => new Date(log.timestamp) >= sevenDaysAgo)
+  const successfulRecentLogs = recentLogs.filter(log => !log.unknown_face).length
+  const accuracyValue = recentLogs.length > 0 ? (successfulRecentLogs / recentLogs.length) * 100 : 0
+  const activeCamerasCount = cameras.filter(camera => camera.is_active).length
+  const offlineCamerasCount = Math.max(cameras.length - activeCamerasCount, 0)
+  const recognitionDelta = yesterdayLogsCount > 0
+    ? `${todayLogs.length >= yesterdayLogsCount ? '+' : ''}${Math.round(((todayLogs.length - yesterdayLogsCount) / yesterdayLogsCount) * 100)}% к вчера`
+    : `${yesterdayLogsCount} вчера`
+
+  const overviewStats = [
+    { label: 'Всего пользователей', value: String(faces.length), delta: 'Профили в базе', icon: '👤', color: '#1a3fd4' },
+    { label: 'Распознаваний сегодня', value: String(todayLogs.length), delta: recognitionDelta, icon: '🔍', color: '#0ea5e9' },
+    { label: 'Точность системы', value: `${accuracyValue.toFixed(1)}%`, delta: 'Последние 7 дней', icon: '🎯', color: '#10b981' },
+    { label: 'Активных камер', value: `${activeCamerasCount} / ${cameras.length}`, icon: '📷', delta: `${offlineCamerasCount} офлайн`, color: '#f59e0b' },
+  ]
+
+  const hourlyActivity = Array.from({ length: 12 }, (_, index) => {
+    const hourStart = new Date(now)
+    hourStart.setMinutes(0, 0, 0)
+    hourStart.setHours(hourStart.getHours() - (11 - index))
+    const hourEnd = new Date(hourStart)
+    hourEnd.setHours(hourEnd.getHours() + 1)
+    return {
+      label: String(hourStart.getHours()),
+      count: logs.filter(log => {
+        const timestamp = new Date(log.timestamp)
+        return timestamp >= hourStart && timestamp < hourEnd
+      }).length,
+    }
+  })
+  const maxHourlyActivity = Math.max(...hourlyActivity.map(item => item.count), 1)
+
   const filteredAdminAccounts = adminAccounts
     .filter(a => {
       const term = adminSearch.trim().toLowerCase()
@@ -659,7 +736,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       case 'overview': return (
         <div style={{ animation: 'dashFade 0.3s ease' }}>
           <div style={S.statsGrid}>
-            {STATS.map(st => (
+            {overviewStats.map(st => (
               <div key={st.label} style={S.statCard}>
                 <div style={S.statIcon}>{st.icon}</div>
                 <div style={{ ...S.statValue, color: st.color }}>{st.value}</div>
@@ -718,11 +795,12 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
               </div>
               <div style={{ padding: '24px 22px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 120 }}>
-                  {bars.map((h, i) => (
+                  {hourlyActivity.map((item, i) => (
                     <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                       <div style={{
-                        width: '100%', height: `${(h / 110) * 100}%`,
-                        background: i === bars.length - 1
+                        width: '100%',
+                        height: item.count > 0 ? `${Math.max((item.count / maxHourlyActivity) * 100, 4)}%` : 0,
+                        background: i === hourlyActivity.length - 1
                           ? 'linear-gradient(180deg, #1a3fd4, #0a1f6b)'
                           : 'linear-gradient(180deg, #93c5fd, #dbeafe)',
                         borderRadius: 4,
@@ -732,8 +810,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                  {hours.map((h, i) => (
-                    <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: '#94a3b8' }}>{h}</div>
+                  {hourlyActivity.map((item, i) => (
+                    <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: '#94a3b8' }}>{item.label}</div>
                   ))}
                 </div>
               </div>
