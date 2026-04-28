@@ -183,3 +183,11 @@ python3 create_superuser.py
 - [frontend/src/Dashboard.tsx] — replaced hardcoded overview stats and activity bars with values derived from loaded faces, logs, cameras, and company users, falling back to zero when data is absent.
 - [frontend/src/Dashboard.tsx] — implemented the dark-theme setting with persisted theme state and dashboard color variables.
 - [db.sqlite3] — cleared all users and operational records, leaving only the `developer` superadmin account.
+- [frontend/src/Dashboard.tsx] — split administrators into a separate `Администраторы` registry, moved administrator creation there, and returned `Камеры` to a dedicated camera registry.
+- [frontend/src/Dashboard.tsx] — stopped loading the company-users registry for the `developer` superadmin so a missing company cannot show `Company is required`.
+- [app/routers/users_router.py] — added a superadmin-only companies endpoint for real company counts.
+- [frontend/src/types.ts] — added company and camera-account fields used by overview and camera-specific logs.
+- [frontend/src/Dashboard.tsx] — showed company count for superadmin, filtered recognition logs by selected camera, and marked camera activation/deactivation as disabled future actions.
+- [frontend/src/Dashboard.tsx] — made company-count loading non-blocking and added an admin-company fallback so stale backends do not show `Not Found`.
+- [frontend/src/Dashboard.tsx] — fixed user edit role selection to preserve custom roles and allow changing to a new custom role.
+- [frontend/src/Dashboard.tsx] — unified add/edit user role options so `Работник` is available in both forms.

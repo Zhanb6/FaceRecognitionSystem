@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import type { FC, CSSProperties, ReactNode } from 'react'
 import { ApiError, apiRequest, getErrorMessage, toJsonBody } from './api'
-import type { AdminAccount, AuditEntry, AuthUser, CameraAcc, CompanyUser, Face, RecognitionLog } from './types'
+import type { AdminAccount, AuditEntry, AuthUser, CameraAcc, CompanyAccount, CompanyUser, Face, RecognitionLog } from './types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type NavPage = 'overview' | 'users' | 'recognition' | 'cameras' | 'settings' | 'history'
+type NavPage = 'overview' | 'users' | 'admins' | 'recognition' | 'cameras' | 'settings' | 'history'
 
 interface DashboardProps {
   username?: string
   user: AuthUser | null
   onLogout: () => void
 }
+
+const DEFAULT_FACE_ROLES = ['Студент', 'Преподаватель', 'Работник', 'Гость']
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const S: Record<string, CSSProperties> = {
@@ -323,13 +325,14 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const canManageCameras = isSuperAdmin || isCompanyAdmin
   const canManageFaces = isSuperAdmin || isCompanyAdmin || user?.is_camera
   const canViewHistory = isSuperAdmin
-  const canViewCompanyUsers = isSuperAdmin || isCompanyAdmin
+  const canViewCompanyUsers = isCompanyAdmin
 
   const [faces, setFaces] = useState<Face[]>([])
   const [logs, setLogs] = useState<RecognitionLog[]>([])
   const [cameras, setCameras] = useState<CameraAcc[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([])
   const [companyUsers, setCompanyUsers] = useState<CompanyUser[]>([])
+  const [companies, setCompanies] = useState<CompanyAccount[]>([])
   const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>([])
 
   const [showAddModal, setShowAddModal] = useState(false)
@@ -354,10 +357,12 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [showRequestModal, setShowRequestModal] = useState(false)
   const [requestLogin, setRequestLogin] = useState('')
   const [requestPassword, setRequestPassword] = useState('')
+  const [requestCompanyName, setRequestCompanyName] = useState('')
   const [creatingRequest, setCreatingRequest] = useState(false)
   const [requestError, setRequestError] = useState('')
   const [adminSearch, setAdminSearch] = useState('')
   const [adminCameraFilter, setAdminCameraFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [selectedCameraLogFilter, setSelectedCameraLogFilter] = useState<CameraAcc | null>(null)
   const [dashboardError, setDashboardError] = useState('')
 
   // Hover state for face cards
@@ -372,6 +377,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [editFaceModal, setEditFaceModal] = useState<Face | null>(null)
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState('')
+  const [editCustomRole, setEditCustomRole] = useState('')
   const [editCams, setEditCams] = useState<number[]>([])
   const [updatingFace, setUpdatingFace] = useState(false)
 
@@ -380,6 +386,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     apply: (data: T) => void,
     sectionName: string,
     signal?: AbortSignal,
+    showError = true,
   ) => {
     try {
       const data = await request
@@ -391,7 +398,9 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         onLogout()
         return
       }
-      setDashboardError(prev => prev || getErrorMessage(error, `Не удалось загрузить ${sectionName}`))
+      if (showError) {
+        setDashboardError(prev => prev || getErrorMessage(error, `Не удалось загрузить ${sectionName}`))
+      }
     }
   }, [onLogout])
 
@@ -436,6 +445,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
           setAdminAccounts,
           'список администраторов',
           signal,
+        ))
+        optionalRequests.push(loadOptionalDashboardSection(
+          apiRequest<CompanyAccount[]>('/api/auth/companies/', { auth: true, signal }),
+          setCompanies,
+          'список компаний',
+          signal,
+          false,
         ))
       }
 
@@ -541,6 +557,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const handleUpdateFace = async () => {
     if (!canManageFaces) return
     if (!editFaceModal) return
+    const finalRole = editRole === 'Другое...' ? editCustomRole.trim() : editRole
+    if (!finalRole) return
     setUpdatingFace(true)
     try {
       setDashboardError('')
@@ -549,11 +567,12 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         auth: true,
         body: toJsonBody({
           full_name: editName,
-          role: editRole,
+          role: finalRole,
           allowed_cameras: editCams
         })
       })
       setEditFaceModal(null)
+      setEditCustomRole('')
       fetchDashboardData()
     } catch (error) {
       console.error("Error updating face", error)
@@ -635,6 +654,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   )
 
   const filteredLogs = logs.filter(log => {
+    if (selectedCameraLogFilter && log.camera_account !== selectedCameraLogFilter.id) return false
     if (recognitionFilter === 'known') return !log.unknown_face
     if (recognitionFilter === 'unknown') return log.unknown_face
     return true
@@ -691,6 +711,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const accuracyValue = recentLogs.length > 0 ? (successfulRecentLogs / recentLogs.length) * 100 : 0
   const activeCamerasCount = cameras.filter(camera => camera.is_active).length
   const offlineCamerasCount = Math.max(cameras.length - activeCamerasCount, 0)
+  const companyNameCount = new Set(adminAccounts.map(admin => admin.company_name).filter(Boolean)).size
+  const companyCount = companies.length || companyNameCount
   const recognitionDelta = yesterdayLogsCount > 0
     ? `${todayLogs.length >= yesterdayLogsCount ? '+' : ''}${Math.round(((todayLogs.length - yesterdayLogsCount) / yesterdayLogsCount) * 100)}% к вчера`
     : `${yesterdayLogsCount} вчера`
@@ -700,6 +722,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     { label: 'Распознаваний сегодня', value: String(todayLogs.length), delta: recognitionDelta, icon: '🔍', color: '#0ea5e9' },
     { label: 'Точность системы', value: `${accuracyValue.toFixed(1)}%`, delta: 'Последние 7 дней', icon: '🎯', color: '#10b981' },
     { label: 'Активных камер', value: `${activeCamerasCount} / ${cameras.length}`, icon: '📷', delta: `${offlineCamerasCount} офлайн`, color: '#f59e0b' },
+    ...(isSuperAdmin ? [{ label: 'Компаний', value: String(companyCount), icon: '🏢', delta: 'Всего организаций', color: '#0d9488' }] : []),
   ]
 
   const hourlyActivity = Array.from({ length: 12 }, (_, index) => {
@@ -745,11 +768,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         body: toJsonBody({
           username: requestLogin,
           password: requestPassword,
+          company_name: requestCompanyName.trim() || undefined,
         })
       })
 
       setRequestLogin('')
       setRequestPassword('')
+      setRequestCompanyName('')
       setShowRequestModal(false)
       fetchDashboardData()
     } catch (error) {
@@ -893,7 +918,6 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   onChange={e => setSearchUser(e.target.value)}
                   style={{ ...S.settingInput, width: 180, fontSize: 12, border: '1px solid #e2e8f0' }}
                 />
-                {isSuperAdmin && <button style={S.primaryMiniBtn} onClick={() => setShowRequestModal(true)}>Создать компанию</button>}
                 {canManageFaces && <button style={S.primaryMiniBtn} onClick={() => setShowAddModal(true)}>+ Добавить пользователя</button>}
               </div>
             </div>
@@ -963,6 +987,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                               setEditFaceModal(f)
                               setEditName(f.full_name)
                               setEditRole(f.role)
+                              setEditCustomRole('')
                               setEditCams(f.allowed_cameras || [])
                             }}
                           >
@@ -992,8 +1017,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         <div style={{ animation: 'dashFade 0.3s ease' }}>
           <div style={S.card}>
             <div style={S.cardHeader}>
-              <span style={S.cardTitle}>Лог распознаваний</span>
+              <span style={S.cardTitle}>
+                {selectedCameraLogFilter ? `Лог распознаваний: ${selectedCameraLogFilter.username}` : 'Лог распознаваний'}
+              </span>
               <div style={{ display: 'flex', gap: 8 }}>
+                {selectedCameraLogFilter && (
+                  <button style={S.miniBtn} onClick={() => setSelectedCameraLogFilter(null)}>Все камеры</button>
+                )}
                 <button style={S.miniBtn} onClick={handleExportLogsCsv} disabled={filteredLogs.length === 0}>Экспорт CSV</button>
                 <button style={S.miniBtn} onClick={handleCycleRecognitionFilter}>
                   {recognitionFilter === 'all' ? 'Все записи' : recognitionFilter === 'known' ? 'Только успешные' : 'Только отказы'}
@@ -1019,7 +1049,9 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                     <td style={{ ...S.td, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
                       {new Date(l.timestamp).toLocaleString()}
                     </td>
-                    <td style={{ ...S.td, color: '#64748b' }}>Текущая камера</td>
+                    <td style={{ ...S.td, color: '#64748b' }}>
+                      {cameras.find(camera => camera.id === l.camera_account)?.username || `Camera ${l.camera_account}`}
+                    </td>
                     <td style={S.td}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{
@@ -1051,122 +1083,137 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         </div>
       )
 
+      // ─── ADMINS ──────────────────────────────────────────────────────────────
+      case 'admins': return (
+        <div style={{ animation: 'dashFade 0.3s ease' }}>
+          <div style={S.card}>
+            <div style={S.cardHeader}>
+              <span style={S.cardTitle}>Список Администраторов</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  placeholder="Поиск администратора..."
+                  value={adminSearch}
+                  onChange={e => setAdminSearch(e.target.value)}
+                  style={{ ...S.settingInput, width: 220, fontSize: 12, border: '1px solid #e2e8f0' }}
+                />
+                <select
+                  value={adminCameraFilter}
+                  onChange={e => setAdminCameraFilter(e.target.value as 'all' | 'with' | 'without')}
+                  style={{ ...S.settingInput, width: 190, fontSize: 12, border: '1px solid #e2e8f0' }}
+                >
+                  <option value="all">Все администраторы</option>
+                  <option value="with">Только с камерами</option>
+                  <option value="without">Только без камер</option>
+                </select>
+                <button style={S.primaryMiniBtn} onClick={() => setShowRequestModal(true)}>+ Добавить администратора</button>
+              </div>
+            </div>
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Администратор (Логин)</th>
+                  <th style={S.th}>Компания</th>
+                  <th style={S.th}>Камер создано</th>
+                  <th style={S.th}>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAdminAccounts.map(a => {
+                  const adminCameras = cameras.filter(c => c.owner_id === a.id)
+                  const isExpanded = expandedAdminIds.includes(a.id)
+                  return (
+                    <React.Fragment key={a.id}>
+                      <tr
+                        style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                        onClick={() => setExpandedAdminIds(prev => isExpanded ? prev.filter(id => id !== a.id) : [...prev, a.id])}
+                      >
+                        <td style={{ ...S.td, fontWeight: 500 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{
+                              fontSize: 10, color: '#94a3b8',
+                              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              transition: 'transform 0.2s ease'
+                            }}>
+                              ▶
+                            </span>
+                            {a.username}
+                          </div>
+                        </td>
+                        <td style={{ ...S.td, color: '#64748b' }}>{a.company_name || '-'}</td>
+                        <td style={{ ...S.td, fontWeight: 600, color: '#0d1b4b' }}>{adminCameras.length}</td>
+                        <td style={S.td}><span style={S.badgeActive}>Администрация</span></td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={4} style={{ padding: 0, borderBottom: '1px solid #e2e8f0', background: '#fafbff' }}>
+                            <div style={{ padding: '14px 24px 18px 42px', animation: 'dashFade 0.2s ease' }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: '#0d1b4b', marginBottom: 10 }}>
+                                Камеры, созданные этим администратором
+                              </div>
+                              {adminCameras.length === 0 ? (
+                                <div style={{ fontSize: 13, color: '#94a3b8' }}>Камеры пока не созданы</div>
+                              ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+                                  {adminCameras.map(cam => (
+                                    <div
+                                      key={cam.id}
+                                      style={{
+                                        border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px',
+                                        background: '#fff', display: 'flex', flexDirection: 'column', gap: 4,
+                                      }}
+                                    >
+                                      <div style={{ fontSize: 14, fontWeight: 600, color: '#0d1b4b' }}>{cam.username}</div>
+                                      <div style={{ fontSize: 12, color: '#64748b' }}>
+                                        Создана: {new Date(cam.date_joined).toLocaleDateString()}
+                                      </div>
+                                      <div>
+                                        {cam.is_active
+                                          ? <span style={S.badgeOnline}><div style={{ ...S.dot, background: '#16a34a' }} />Активна</span>
+                                          : <span style={S.badgeOffline}><div style={{ ...S.dot, background: '#dc2626' }} />Отключена</span>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+                {filteredAdminAccounts.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ ...S.td, textAlign: 'center', color: '#94a3b8' }}>
+                      По заданным условиям администраторы не найдены
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )
+
       // ─── CAMERAS ─────────────────────────────────────────────────────────────
       case 'cameras': return (
         <div style={{ animation: 'dashFade 0.3s ease' }}>
           <div style={S.card}>
             <div style={S.cardHeader}>
-              <span style={S.cardTitle}>{isSuperAdmin ? 'Список Администраторов' : 'Управление камерами'}</span>
-              {isSuperAdmin ? (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    placeholder="Поиск администратора..."
-                    value={adminSearch}
-                    onChange={e => setAdminSearch(e.target.value)}
-                    style={{ ...S.settingInput, width: 220, fontSize: 12, border: '1px solid #e2e8f0' }}
-                  />
-                  <select
-                    value={adminCameraFilter}
-                    onChange={e => setAdminCameraFilter(e.target.value as 'all' | 'with' | 'without')}
-                    style={{ ...S.settingInput, width: 190, fontSize: 12, border: '1px solid #e2e8f0' }}
-                  >
-                    <option value="all">Все администраторы</option>
-                    <option value="with">Только с камерами</option>
-                    <option value="without">Только без камер</option>
-                  </select>
-                </div>
-              ) : (
-                canManageCameras && <button style={S.primaryMiniBtn} onClick={() => setShowAddCamModal(true)}>+ Добавить камеру</button>
-              )}
+              <span style={S.cardTitle}>Управление камерами</span>
+              {!isSuperAdmin && canManageCameras && <button style={S.primaryMiniBtn} onClick={() => setShowAddCamModal(true)}>+ Добавить камеру</button>}
             </div>
             <table style={S.table}>
               <thead>
                 <tr>
-                  {isSuperAdmin ? (
-                    <>
-                      <th style={S.th}>Администратор (Логин)</th>
-                      <th style={S.th}>Компания</th>
-                      <th style={S.th}>Камер создано</th>
-                      <th style={S.th}>Действия</th>
-                    </>
-                  ) : (
-                    <>
-                      <th style={S.th}>Камера (Имя профиля)</th>
-                      <th style={S.th}>Дата создания</th>
-                      <th style={S.th}>Статус</th>
-                      <th style={S.th}>Действия</th>
-                    </>
-                  )}
+                  <th style={S.th}>Камера (Имя профиля)</th>
+                  <th style={S.th}>Дата создания</th>
+                  <th style={S.th}>Статус</th>
+                  <th style={S.th}>Действия</th>
                 </tr>
               </thead>
               <tbody>
-                {isSuperAdmin ? (
-                  filteredAdminAccounts.map(a => {
-                    const adminCameras = cameras.filter(c => c.owner_id === a.id)
-                    const isExpanded = expandedAdminIds.includes(a.id)
-                    return (
-                      <React.Fragment key={a.id}>
-                        <tr
-                          style={{ cursor: 'pointer', transition: 'background 0.15s' }}
-                          onClick={() => setExpandedAdminIds(prev => isExpanded ? prev.filter(id => id !== a.id) : [...prev, a.id])}
-                        >
-                          <td style={{ ...S.td, fontWeight: 500 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{
-                                fontSize: 10, color: '#94a3b8',
-                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                                transition: 'transform 0.2s ease'
-                              }}>
-                                ▶
-                              </span>
-                              {a.username}
-                            </div>
-                          </td>
-                          <td style={{ ...S.td, color: '#64748b' }}>{a.company_name || '-'}</td>
-                          <td style={{ ...S.td, fontWeight: 600, color: '#0d1b4b' }}>{adminCameras.length}</td>
-                          <td style={S.td}><span style={S.badgeActive}>Администрация</span></td>
-                        </tr>
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={4} style={{ padding: 0, borderBottom: '1px solid #e2e8f0', background: '#fafbff' }}>
-                              <div style={{ padding: '14px 24px 18px 42px', animation: 'dashFade 0.2s ease' }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: '#0d1b4b', marginBottom: 10 }}>
-                                  Камеры, созданные этим администратором
-                                </div>
-                                {adminCameras.length === 0 ? (
-                                  <div style={{ fontSize: 13, color: '#94a3b8' }}>Камеры пока не созданы</div>
-                                ) : (
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
-                                    {adminCameras.map(cam => (
-                                      <div
-                                        key={cam.id}
-                                        style={{
-                                          border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px',
-                                          background: '#fff', display: 'flex', flexDirection: 'column', gap: 4,
-                                        }}
-                                      >
-                                        <div style={{ fontSize: 14, fontWeight: 600, color: '#0d1b4b' }}>{cam.username}</div>
-                                        <div style={{ fontSize: 12, color: '#64748b' }}>
-                                          Создана: {new Date(cam.date_joined).toLocaleDateString()}
-                                        </div>
-                                        <div>
-                                          {cam.is_active
-                                            ? <span style={S.badgeOnline}><div style={{ ...S.dot, background: '#16a34a' }} />Активна</span>
-                                            : <span style={S.badgeOffline}><div style={{ ...S.dot, background: '#dc2626' }} />Отключена</span>}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    )
-                  })
-                ) : (
-                  cameras.map(c => (
+                {cameras.map(c => (
                     <React.Fragment key={c.id}>
                       <tr style={{ cursor: 'pointer', transition: 'background 0.15s' }} onClick={() => handleToggleCameraFaces(c)}>
                         <td style={{ ...S.td, fontWeight: 500 }}>
@@ -1190,14 +1237,22 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                         <td style={S.td}>
                           <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                             {canManageCameras && <button style={S.miniBtn} onClick={() => setAddExistingFaceModal(c)}>+ Пользователь</button>}
-                            <button style={S.miniBtn} onClick={() => setPage('recognition')}>Просмотр логов</button>
+                            <button
+                              style={S.miniBtn}
+                              onClick={() => {
+                                setSelectedCameraLogFilter(c)
+                                setPage('recognition')
+                              }}
+                            >
+                              Просмотр логов
+                            </button>
                             {canManageCameras && (
                               <button
                                 style={{ ...S.miniBtn, opacity: 0.55, cursor: 'not-allowed' }}
                                 disabled
-                                title="Настройки камеры не реализованы в API"
+                                title="Активация и деактивация камеры будет добавлена позже"
                               >
-                                Настройки
+                                {c.is_active ? 'Деактивировать' : 'Активировать'}
                               </button>
                             )}
                           </div>
@@ -1264,12 +1319,11 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                         </tr>
                       )}
                     </React.Fragment>
-                  ))
-                )}
-                {isSuperAdmin && filteredAdminAccounts.length === 0 && (
+                ))}
+                {cameras.length === 0 && (
                   <tr>
                     <td colSpan={4} style={{ ...S.td, textAlign: 'center', color: '#94a3b8' }}>
-                      По заданным условиям администраторы не найдены
+                      Камеры не найдены
                     </td>
                   </tr>
                 )}
@@ -1409,11 +1463,9 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const PAGE_META: Record<NavPage, { title: string; subtitle: string }> = {
     overview: { title: 'Обзор', subtitle: 'Статус системы распознавания лиц в реальном времени' },
     users: { title: 'Пользователи', subtitle: 'Управление зарегистрированными в системе' },
+    admins: { title: 'Администраторы', subtitle: 'Отдельный реестр администраторов компаний' },
     recognition: { title: 'Лог распознаваний', subtitle: 'История всех событий распознавания' },
-    cameras: {
-      title: isSuperAdmin ? 'Список Администраторов' : 'Камеры',
-      subtitle: isSuperAdmin ? 'Пользователи с ролью Администрация и их созданные камеры' : 'Мониторинг и управление камерами'
-    },
+    cameras: { title: 'Камеры', subtitle: 'Мониторинг и управление камерами' },
     settings: { title: 'Настройки', subtitle: 'Конфигурация системы' },
     history: { title: 'История действий', subtitle: 'Аудит системных событий, изменений и прав доступа' },
   }
@@ -1469,7 +1521,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       {/* Modal Overlay for Adding User */}
       {showAddModal && canManageFaces && (() => {
         const uniqueRoles = Array.from(
-          new Set(['Студент', 'Преподаватель', 'Гость', ...faces.map(f => f.role)])
+          new Set([...DEFAULT_FACE_ROLES, ...faces.map(f => f.role)])
         ).filter(r => !/админ/i.test(r))
         return (
           <div style={{
@@ -1640,11 +1692,18 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
       {/* ── EDIT FACE MODAL ─────────────────────────────────────────────────── */}
       {editFaceModal && (
+        (() => {
+          const editRoleOptions = Array.from(
+            new Set([...DEFAULT_FACE_ROLES, ...faces.map(f => f.role), editFaceModal.role])
+          ).filter(Boolean)
+          const isEditSaveDisabled = updatingFace || !editName || (editRole === 'Другое...' && !editCustomRole.trim())
+
+          return (
         <div style={S.modalOverlay}>
           <div style={{ ...S.modal, maxWidth: 450 }}>
             <div style={S.modalHeader}>
               <span style={{ fontWeight: 600 }}>Настройка пользователя</span>
-              <button style={S.closeBtn} onClick={() => setEditFaceModal(null)}>×</button>
+              <button style={S.closeBtn} onClick={() => { setEditFaceModal(null); setEditCustomRole('') }}>×</button>
             </div>
             <div style={{ padding: '24px 28px' }}>
               <div style={{ marginBottom: 16 }}>
@@ -1675,12 +1734,28 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                     backgroundSize: '16px'
                   }}
                 >
-                  <option value="Студент">Студент</option>
-                  <option value="Преподаватель">Преподаватель</option>
-                  <option value="Работник">Работник</option>
-                  <option value="Гость">Гость</option>
+                  {editRoleOptions.map(role => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                  <option value="Другое...">Другое...</option>
                 </select>
               </div>
+
+              {editRole === 'Другое...' && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Новая роль</div>
+                  <input
+                    value={editCustomRole}
+                    onChange={e => setEditCustomRole(e.target.value)}
+                    placeholder="Напр., Физик"
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: 8,
+                      border: '1px solid #e2e8f0', fontSize: 14, outline: 'none',
+                      background: '#ffffff', color: '#0d1b4b', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              )}
 
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Группы (Камеры)</div>
@@ -1707,17 +1782,17 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
               <div style={{ display: 'flex', gap: 12 }}>
                 <button
-                  onClick={() => setEditFaceModal(null)}
+                  onClick={() => { setEditFaceModal(null); setEditCustomRole('') }}
                   style={{ ...S.miniBtn, flex: 1, padding: '10px', fontSize: 14 }}
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleUpdateFace}
-                  disabled={updatingFace || !editName}
+                  disabled={isEditSaveDisabled}
                   style={{
                     ...S.primaryMiniBtn, flex: 1, padding: '10px', fontSize: 14,
-                    opacity: (!editName || updatingFace) ? 0.6 : 1
+                    opacity: isEditSaveDisabled ? 0.6 : 1
                   }}
                 >
                   {updatingFace ? 'Сохранение...' : 'Сохранить изменения'}
@@ -1726,6 +1801,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
             </div>
           </div>
         </div>
+          )
+        })()
       )}
 
       {/* ── CREATE CAMERA MODAL ────────────────────────────────────────────────── */}
@@ -1772,8 +1849,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         <div style={S.modalOverlay}>
           <div style={{ ...S.modal, maxWidth: 520 }}>
             <div style={S.modalHeader}>
-              <span style={{ fontWeight: 600 }}>Создание Заявки</span>
-              <button style={S.closeBtn} onClick={() => { setShowRequestModal(false); setRequestError('') }}>×</button>
+              <span style={{ fontWeight: 600 }}>Новый администратор</span>
+              <button style={S.closeBtn} onClick={() => { setShowRequestModal(false); setRequestError(''); setRequestCompanyName('') }}>×</button>
             </div>
             <div style={{ padding: '24px 28px' }}>
               <div style={{ marginBottom: 16, fontSize: 13, color: '#64748b' }}>
@@ -1813,6 +1890,15 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   style={S.settingInput}
                 />
               </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Компания</div>
+                <input
+                  value={requestCompanyName}
+                  onChange={e => setRequestCompanyName(e.target.value)}
+                  placeholder="Напр., AITU"
+                  style={S.settingInput}
+                />
+              </div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Пароль</div>
                 <input
@@ -1830,7 +1916,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
-                  onClick={() => { setShowRequestModal(false); setRequestError('') }}
+                  onClick={() => { setShowRequestModal(false); setRequestError(''); setRequestCompanyName('') }}
                   style={{ ...S.miniBtn, flex: 1, padding: '10px', fontSize: 14 }}
                 >
                   Отмена
@@ -1840,7 +1926,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   disabled={creatingRequest || !requestLogin || !requestPassword}
                   style={{ ...S.primaryBtn, flex: 1, opacity: (creatingRequest || !requestLogin || !requestPassword) ? 0.6 : 1 }}
                 >
-                  {creatingRequest ? 'Создание...' : 'Создать'}
+                  {creatingRequest ? 'Создание...' : 'Создать администратора'}
                 </button>
               </div>
             </div>
@@ -1869,10 +1955,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
           <div style={S.sidebarSection}>Главное</div>
           <NavItem icon="📊" label="Обзор" active={page === 'overview'} onClick={() => setPage('overview')} />
           <NavItem icon="👥" label="Пользователи" active={page === 'users'} onClick={() => setPage('users')} />
+          {isSuperAdmin && (
+            <NavItem icon="🏢" label="Администраторы" active={page === 'admins'} onClick={() => setPage('admins')} />
+          )}
           <NavItem icon="🔍" label="Лог распознаваний" active={page === 'recognition'} onClick={() => setPage('recognition')} />
 
           <div style={S.sidebarSection}>Система</div>
-          <NavItem icon="📷" label={isSuperAdmin ? 'Список Администраторов' : 'Камеры'} active={page === 'cameras'} onClick={() => setPage('cameras')} />
+          <NavItem icon="📷" label="Камеры" active={page === 'cameras'} onClick={() => setPage('cameras')} />
           <NavItem icon="⚙️" label="Настройки" active={page === 'settings'} onClick={() => setPage('settings')} />
           {canViewHistory && (
             <NavItem icon="📜" label="История" active={page === 'history'} onClick={() => setPage('history')} />

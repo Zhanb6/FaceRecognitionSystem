@@ -30,6 +30,7 @@ export interface Face {
 
 export interface RecognitionLog {
   id: number
+  camera_account: number
   person_name: string | null
   unknown_face: boolean
   confidence: number
@@ -60,6 +61,12 @@ export interface CompanyUser {
   role: UserRole
   company: number | null
   company_name?: string
+}
+
+export interface CompanyAccount {
+  id: number
+  name: string
+  created_at: string
 }
 
 export interface AdminAccount {

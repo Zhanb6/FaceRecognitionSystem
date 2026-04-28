@@ -15,6 +15,14 @@ from ..utils import is_super_admin, is_company_admin, get_request_company, log_a
 router = APIRouter()
 
 
+def _company_out(company: Company) -> dict:
+    return {
+        "id": company.id,
+        "name": company.name,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
+    }
+
+
 def _user_out(user: CustomUser) -> dict:
     return {
         "id": user.id,
@@ -65,6 +73,18 @@ def list_company_users(
         .all()
     )
     return [_user_out(u) for u in users]
+
+
+@router.get("/companies/")
+def list_companies(
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Super Admin permission required")
+
+    companies = db.query(Company).order_by(Company.created_at.desc()).all()
+    return [_company_out(company) for company in companies]
 
 
 @router.post("/users/create/", status_code=status.HTTP_201_CREATED)
