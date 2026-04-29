@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import type { FC, CSSProperties, ReactNode } from 'react'
 import { ApiError, apiRequest, getErrorMessage, toJsonBody } from './api'
-import type { AdminAccount, AuditEntry, AuthUser, CameraAcc, Face, RecognitionLog } from './types'
+import type { AdminAccount, AuditEntry, AuthUser, CameraAcc, Face, RecognitionCheckResponse, RecognitionLog } from './types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NavPage = 'overview' | 'users' | 'admins' | 'recognition' | 'cameras' | 'settings' | 'history'
@@ -377,6 +377,19 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [editCustomRole, setEditCustomRole] = useState('')
   const [editCams, setEditCams] = useState<number[]>([])
   const [updatingFace, setUpdatingFace] = useState(false)
+  const [faceIdModal, setFaceIdModal] = useState<Face | null>(null)
+  const [faceIdStream, setFaceIdStream] = useState<MediaStream | null>(null)
+  const [faceIdError, setFaceIdError] = useState('')
+  const [faceIdSuccess, setFaceIdSuccess] = useState('')
+  const [savingFaceId, setSavingFaceId] = useState(false)
+  const faceIdVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [recognitionCheckOpen, setRecognitionCheckOpen] = useState(false)
+  const [recognitionCheckStream, setRecognitionCheckStream] = useState<MediaStream | null>(null)
+  const [recognitionCheckError, setRecognitionCheckError] = useState('')
+  const [recognitionCheckResult, setRecognitionCheckResult] = useState<RecognitionCheckResponse | null>(null)
+  const [checkingRecognition, setCheckingRecognition] = useState(false)
+  const [recognitionCheckCameraId, setRecognitionCheckCameraId] = useState('')
+  const recognitionCheckVideoRef = useRef<HTMLVideoElement | null>(null)
 
   const loadOptionalDashboardSection = useCallback(async <T,>(
     request: Promise<T>,
@@ -400,6 +413,20 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       }
     }
   }, [onLogout])
+
+  const stopFaceIdCamera = useCallback(() => {
+    setFaceIdStream(current => {
+      current?.getTracks().forEach(track => track.stop())
+      return null
+    })
+  }, [])
+
+  const stopRecognitionCheckCamera = useCallback(() => {
+    setRecognitionCheckStream(current => {
+      current?.getTracks().forEach(track => track.stop())
+      return null
+    })
+  }, [])
 
   const fetchDashboardData = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -453,6 +480,21 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     fetchDashboardData(controller.signal)
     return () => controller.abort()
   }, [fetchDashboardData])
+
+  useEffect(() => {
+    if (faceIdVideoRef.current) {
+      faceIdVideoRef.current.srcObject = faceIdStream
+    }
+  }, [faceIdStream])
+
+  useEffect(() => {
+    if (recognitionCheckVideoRef.current) {
+      recognitionCheckVideoRef.current.srcObject = recognitionCheckStream
+    }
+  }, [recognitionCheckStream])
+
+  useEffect(() => () => stopFaceIdCamera(), [stopFaceIdCamera])
+  useEffect(() => () => stopRecognitionCheckCamera(), [stopRecognitionCheckCamera])
 
   useEffect(() => {
     localStorage.setItem('dashboard_dark_mode', String(settings.darkMode))
@@ -559,6 +601,157 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
       setDashboardError(getErrorMessage(error, 'Не удалось обновить пользователя'))
     } finally {
       setUpdatingFace(false)
+    }
+  }
+
+  const openFaceIdModal = async (face: Face) => {
+    if (!canManageFaces) return
+    setFaceIdModal(face)
+    setFaceIdError('')
+    setFaceIdSuccess('')
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setFaceIdError('Браузер не поддерживает доступ к камере')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      })
+      setFaceIdStream(stream)
+    } catch (error) {
+      console.error('Error opening camera for Face ID', error)
+      setFaceIdError('Не удалось открыть камеру. Проверьте разрешение браузера.')
+    }
+  }
+
+  const closeFaceIdModal = () => {
+    stopFaceIdCamera()
+    setFaceIdModal(null)
+    setFaceIdError('')
+    setFaceIdSuccess('')
+    setSavingFaceId(false)
+  }
+
+  const handleCaptureFaceId = async () => {
+    if (!faceIdModal || !faceIdVideoRef.current || !faceIdStream) return
+
+    const video = faceIdVideoRef.current
+    if (!video.videoWidth || !video.videoHeight) {
+      setFaceIdError('Камера еще не готова. Подождите секунду и попробуйте снова.')
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const context = canvas.getContext('2d')
+    if (!context) {
+      setFaceIdError('Не удалось подготовить снимок')
+      return
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const imageData = canvas.toDataURL('image/jpeg', 0.9)
+
+    setSavingFaceId(true)
+    try {
+      setFaceIdError('')
+      setFaceIdSuccess('')
+      const requestFaceIdSave = (path: string) => apiRequest(path, {
+        method: 'POST',
+        auth: true,
+        body: toJsonBody({ image_data: imageData }),
+      })
+      try {
+        await requestFaceIdSave(`/api/auth/faces/${faceIdModal.id}/face-id/`)
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 404) throw error
+        await requestFaceIdSave(`/api/auth/faces/${faceIdModal.id}/face-id`)
+      }
+      setFaceIdSuccess('Face ID сохранен для пользователя')
+      fetchDashboardData()
+    } catch (error) {
+      console.error('Error saving Face ID', error)
+      setFaceIdError(getErrorMessage(error, 'Не удалось сохранить Face ID'))
+    } finally {
+      setSavingFaceId(false)
+    }
+  }
+
+  const openRecognitionCheck = async () => {
+    setRecognitionCheckOpen(true)
+    setRecognitionCheckError('')
+    setRecognitionCheckResult(null)
+    setRecognitionCheckCameraId(selectedCameraLogFilter?.id ? String(selectedCameraLogFilter.id) : cameras[0]?.id ? String(cameras[0].id) : '')
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setRecognitionCheckError('Браузер не поддерживает доступ к камере')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      })
+      setRecognitionCheckStream(stream)
+    } catch (error) {
+      console.error('Error opening camera for recognition check', error)
+      setRecognitionCheckError('Не удалось открыть камеру. Проверьте разрешение браузера.')
+    }
+  }
+
+  const closeRecognitionCheck = () => {
+    stopRecognitionCheckCamera()
+    setRecognitionCheckOpen(false)
+    setRecognitionCheckError('')
+    setRecognitionCheckResult(null)
+    setCheckingRecognition(false)
+  }
+
+  const handleRecognitionCheck = async () => {
+    if (!recognitionCheckVideoRef.current || !recognitionCheckStream) return
+
+    const video = recognitionCheckVideoRef.current
+    if (!video.videoWidth || !video.videoHeight) {
+      setRecognitionCheckError('Камера еще не готова. Подождите секунду и попробуйте снова.')
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const context = canvas.getContext('2d')
+    if (!context) {
+      setRecognitionCheckError('Не удалось подготовить снимок')
+      return
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const imageData = canvas.toDataURL('image/jpeg', 0.9)
+
+    setCheckingRecognition(true)
+    try {
+      setRecognitionCheckError('')
+      const data = await apiRequest<RecognitionCheckResponse>('/api/auth/logs/check/', {
+        method: 'POST',
+        auth: true,
+        body: toJsonBody({
+          image_data: imageData,
+          camera_id: recognitionCheckCameraId ? Number(recognitionCheckCameraId) : undefined,
+          threshold: Number(settings.threshold) || 0,
+        }),
+      })
+      setRecognitionCheckResult(data)
+      setLogs(prev => [data.log, ...prev.filter(log => log.id !== data.log.id)])
+    } catch (error) {
+      console.error('Error checking recognition', error)
+      setRecognitionCheckError(getErrorMessage(error, 'Не удалось выполнить проверку'))
+    } finally {
+      setCheckingRecognition(false)
     }
   }
 
@@ -948,9 +1141,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                       {canManageFaces ? (
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button
-                            disabled
-                            title="Face ID enrollment is not implemented in the backend"
-                            style={{ ...S.miniBtn, background: '#f1f5f9', color: '#94a3b8', border: 'none', cursor: 'not-allowed', fontWeight: 500 }}
+                            onClick={() => openFaceIdModal(f)}
+                            style={{ ...S.primaryMiniBtn, whiteSpace: 'nowrap' }}
                           >
                             + Face ID
                           </button>
@@ -994,6 +1186,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 {selectedCameraLogFilter ? `Лог распознаваний: ${selectedCameraLogFilter.username}` : 'Лог распознаваний'}
               </span>
               <div style={{ display: 'flex', gap: 8 }}>
+                <button style={S.primaryMiniBtn} onClick={openRecognitionCheck}>Проверить</button>
                 {selectedCameraLogFilter && (
                   <button style={S.miniBtn} onClick={() => setSelectedCameraLogFilter(null)}>Все камеры</button>
                 )}
@@ -1023,7 +1216,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                       {new Date(l.timestamp).toLocaleString()}
                     </td>
                     <td style={{ ...S.td, color: '#64748b' }}>
-                      {cameras.find(camera => camera.id === l.camera_account)?.username || `Camera ${l.camera_account}`}
+                      {l.camera_username || cameras.find(camera => camera.id === l.camera_account)?.username || `Camera ${l.camera_account}`}
                     </td>
                     <td style={S.td}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1381,9 +1574,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                     <div style={S.settingDesc}>Минимум для успешного распознавания (%)</div>
                   </div>
                   <input
-                    type="number" min={50} max={100}
+                    type="number" min={0} max={100}
                     value={settings.threshold}
                     onChange={e => setSettings(s => ({ ...s, threshold: e.target.value }))}
+                    onBlur={e => {
+                      const value = Math.max(0, Math.min(Number(e.target.value) || 0, 100))
+                      setSettings(s => ({ ...s, threshold: String(value) }))
+                    }}
                     style={S.settingInput}
                   />
                 </div>
@@ -1665,6 +1862,176 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
           </div>
         )
       })()}
+
+      {/* ── RECOGNITION CHECK MODAL ─────────────────────────────────────────── */}
+      {recognitionCheckOpen && (
+        <div style={S.modalOverlay}>
+          <div style={{ ...S.modal, maxWidth: 560 }}>
+            <div style={S.modalHeader}>
+              <span style={{ fontWeight: 600 }}>Проверка распознавания</span>
+              <button style={S.closeBtn} onClick={closeRecognitionCheck}>×</button>
+            </div>
+            <div style={{ padding: '24px 28px' }}>
+              {cameras.length > 0 && !user?.is_camera && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Камера для записи лога</div>
+                  <select
+                    value={recognitionCheckCameraId}
+                    onChange={e => setRecognitionCheckCameraId(e.target.value)}
+                    style={{ ...S.settingInput, width: '100%' }}
+                  >
+                    {cameras.map(camera => (
+                      <option key={camera.id} value={camera.id}>{camera.username}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div style={{
+                background: '#0f172a',
+                borderRadius: 12,
+                overflow: 'hidden',
+                aspectRatio: '4 / 3',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 14,
+              }}>
+                {recognitionCheckStream ? (
+                  <video
+                    ref={recognitionCheckVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{ color: '#cbd5e1', fontSize: 13 }}>Открытие камеры...</div>
+                )}
+              </div>
+
+              {recognitionCheckError && (
+                <div style={{
+                  marginBottom: 12, padding: '9px 11px', borderRadius: 8,
+                  background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12,
+                }}>
+                  {recognitionCheckError}
+                </div>
+              )}
+
+              {recognitionCheckResult && (
+                <div style={{
+                  marginBottom: 14, padding: '12px 14px', borderRadius: 10,
+                  background: recognitionCheckResult.recognized ? '#ecfdf5' : '#fef2f2',
+                  border: `1px solid ${recognitionCheckResult.recognized ? '#bbf7d0' : '#fecaca'}`,
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: recognitionCheckResult.recognized ? '#047857' : '#dc2626', marginBottom: 4 }}>
+                    {recognitionCheckResult.recognized ? `Найден: ${recognitionCheckResult.person_name}` : recognitionCheckResult.message}
+                  </div>
+                  <div style={{ fontSize: 13, color: '#64748b' }}>
+                    Accuracy: {recognitionCheckResult.accuracy.toFixed(1)}% / Порог: {recognitionCheckResult.threshold.toFixed(1)}%
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  onClick={closeRecognitionCheck}
+                  style={{ ...S.miniBtn, flex: 1, padding: '10px', fontSize: 14 }}
+                >
+                  Закрыть
+                </button>
+                <button
+                  onClick={handleRecognitionCheck}
+                  disabled={checkingRecognition || !recognitionCheckStream}
+                  style={{
+                    ...S.primaryMiniBtn, flex: 1, padding: '10px', fontSize: 14,
+                    opacity: (checkingRecognition || !recognitionCheckStream) ? 0.6 : 1,
+                  }}
+                >
+                  {checkingRecognition ? 'Проверка...' : 'Проверить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FACE ID MODAL ───────────────────────────────────────────────────── */}
+      {faceIdModal && canManageFaces && (
+        <div style={S.modalOverlay}>
+          <div style={{ ...S.modal, maxWidth: 520 }}>
+            <div style={S.modalHeader}>
+              <span style={{ fontWeight: 600 }}>Face ID: {faceIdModal.full_name}</span>
+              <button style={S.closeBtn} onClick={closeFaceIdModal}>×</button>
+            </div>
+            <div style={{ padding: '24px 28px' }}>
+              <div style={{
+                background: '#0f172a',
+                borderRadius: 12,
+                overflow: 'hidden',
+                aspectRatio: '4 / 3',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 14,
+              }}>
+                {faceIdStream ? (
+                  <video
+                    ref={faceIdVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{ color: '#cbd5e1', fontSize: 13 }}>Открытие камеры...</div>
+                )}
+              </div>
+
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
+                Снимок будет сохранен в базе FaceNet для этого пользователя.
+              </div>
+
+              {faceIdError && (
+                <div style={{
+                  marginBottom: 12, padding: '9px 11px', borderRadius: 8,
+                  background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12,
+                }}>
+                  {faceIdError}
+                </div>
+              )}
+              {faceIdSuccess && (
+                <div style={{
+                  marginBottom: 12, padding: '9px 11px', borderRadius: 8,
+                  background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 12,
+                }}>
+                  {faceIdSuccess}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  onClick={closeFaceIdModal}
+                  style={{ ...S.miniBtn, flex: 1, padding: '10px', fontSize: 14 }}
+                >
+                  Закрыть
+                </button>
+                <button
+                  onClick={handleCaptureFaceId}
+                  disabled={savingFaceId || !faceIdStream}
+                  style={{
+                    ...S.primaryMiniBtn, flex: 1, padding: '10px', fontSize: 14,
+                    opacity: (savingFaceId || !faceIdStream) ? 0.6 : 1,
+                  }}
+                >
+                  {savingFaceId ? 'Сохранение...' : 'Сделать фото'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── EDIT FACE MODAL ─────────────────────────────────────────────────── */}
       {editFaceModal && (

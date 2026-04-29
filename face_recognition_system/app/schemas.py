@@ -75,11 +75,21 @@ class PersonFaceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FaceEnrollmentRequest(BaseModel):
+    image_data: str
+
+
 # ── RecognitionLog ───────────────────────────────────────────────────────────
 class RecognitionLogCreate(BaseModel):
     person: Optional[int] = None
     unknown_face: bool = False
     confidence: float = 0.0
+
+
+class RecognitionCheckRequest(BaseModel):
+    image_data: str
+    camera_id: Optional[int] = None
+    threshold: float = 85.0
 
 
 class RecognitionLogOut(BaseModel):

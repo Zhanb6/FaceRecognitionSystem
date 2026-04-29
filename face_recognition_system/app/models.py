@@ -82,6 +82,20 @@ class PersonFace(Base):
     company = relationship("Company", back_populates="faces")
     allowed_cameras = relationship("CustomUser", secondary=person_face_cameras, back_populates="faces")
     recognition_logs = relationship("RecognitionLog", back_populates="person")
+    face_enrollments = relationship("FaceEnrollment", back_populates="person", cascade="all, delete-orphan")
+
+
+class FaceEnrollment(Base):
+    __tablename__ = "face_enrollments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, ForeignKey("person_faces.id"), nullable=False)
+    image_path = Column(String(500), nullable=False)
+    embedding_key = Column(String(255), nullable=False)
+    detection_confidence = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    person = relationship("PersonFace", back_populates="face_enrollments")
 
 
 class RecognitionLog(Base):

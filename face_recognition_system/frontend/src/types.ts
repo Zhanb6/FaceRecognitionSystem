@@ -31,10 +31,22 @@ export interface Face {
 export interface RecognitionLog {
   id: number
   camera_account: number
+  camera_username?: string | null
   person_name: string | null
   unknown_face: boolean
   confidence: number
   timestamp: string
+}
+
+export interface RecognitionCheckResponse {
+  log: RecognitionLog
+  recognized: boolean
+  person_name: string | null
+  accuracy: number
+  threshold: number
+  similarity: number
+  detection_confidence: number
+  message: string
 }
 
 export interface CameraAcc {

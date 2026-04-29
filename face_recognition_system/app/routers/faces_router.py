@@ -1,16 +1,24 @@
 """
 Faces router — CRUD for PersonFace, mirrors PersonFaceViewSet.
 """
+import base64
+import binascii
+import logging
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models import CustomUser, PersonFace
-from ..schemas import PersonFaceCreate, PersonFaceUpdate
+from ..database import BASE_DIR, get_db
+from ..facenet_bridge import FaceEnrollmentError, FaceNetDependencyError, enroll_face_image
+from ..models import CustomUser, FaceEnrollment, PersonFace
+from ..schemas import FaceEnrollmentRequest, PersonFaceCreate, PersonFaceUpdate
 from ..auth import get_current_user
 from ..utils import is_super_admin, can_manage_faces, log_action
 
 router = APIRouter()
+FACE_ENROLLMENT_DIR = BASE_DIR / "media" / "face_enrollments"
+logger = logging.getLogger(__name__)
 
 
 def _face_out(face: PersonFace) -> dict:
@@ -54,6 +62,21 @@ def _can_access_face(user: CustomUser, face: PersonFace) -> bool:
     if user.is_camera:
         return face.company_id == user.company_id and user in face.allowed_cameras
     return face.company_id == user.company_id
+
+
+def _decode_image_data(image_data: str) -> bytes:
+    if not image_data:
+        raise HTTPException(status_code=400, detail="Image data is required")
+
+    payload = image_data.split(",", 1)[1] if "," in image_data else image_data
+    try:
+        image_bytes = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid image data") from exc
+
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Image data is empty")
+    return image_bytes
 
 
 @router.get("/all_faces/")
@@ -124,6 +147,69 @@ def get_face(
     if not _can_access_face(current_user, face):
         raise HTTPException(status_code=403, detail="Forbidden for this company")
     return _face_out(face)
+
+
+@router.post("/{face_id}/face-id")
+@router.post("/{face_id}/face-id/")
+def enroll_face_id(
+    face_id: int,
+    body: FaceEnrollmentRequest,
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not can_manage_faces(current_user):
+        raise HTTPException(status_code=403, detail="Not enough permissions to enroll Face ID")
+
+    face = db.query(PersonFace).filter(PersonFace.id == face_id).first()
+    if not face:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_access_face(current_user, face):
+        raise HTTPException(status_code=403, detail="Forbidden for this company")
+
+    image_bytes = _decode_image_data(body.image_data)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    person_dir = FACE_ENROLLMENT_DIR / str(face.id)
+    person_dir.mkdir(parents=True, exist_ok=True)
+    image_path = person_dir / f"{timestamp}.jpg"
+    image_path.write_bytes(image_bytes)
+
+    embedding_key = f"personface:{face.id}:{face.full_name}"
+    try:
+        result = enroll_face_image(embedding_key, image_bytes)
+    except FaceNetDependencyError as exc:
+        image_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=503,
+            detail=f"FaceNet dependencies are not installed: {exc}",
+        ) from exc
+    except FaceEnrollmentError as exc:
+        image_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Could not enroll Face ID for person %s", face.id)
+        image_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Could not enroll Face ID") from exc
+
+    enrollment = FaceEnrollment(
+        person_id=face.id,
+        image_path=str(image_path.relative_to(BASE_DIR)),
+        embedding_key=embedding_key,
+        detection_confidence=float(result.get("confidence", 0.0)),
+    )
+    db.add(enrollment)
+    log_action(db, current_user, "Face ID", f"Добавлен Face ID для **{face.full_name}**")
+    db.commit()
+    db.refresh(enrollment)
+
+    return {
+        "message": "Face ID сохранен",
+        "id": enrollment.id,
+        "person": face.id,
+        "image_path": enrollment.image_path,
+        "embedding_key": enrollment.embedding_key,
+        "detection_confidence": enrollment.detection_confidence,
+        "samples": result.get("samples", 0),
+    }
 
 
 @router.api_route("/{face_id}/", methods=["PUT", "PATCH"])

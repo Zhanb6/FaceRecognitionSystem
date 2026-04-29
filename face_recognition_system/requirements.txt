@@ -5,3 +5,10 @@ python-jose[cryptography]==3.3.0
 bcrypt==4.2.1
 pydantic[email]==2.13.3
 email-validator==2.2.0
+httpx==0.28.1
+facenet-pytorch==2.6.0
+torch==2.2.2
+torchvision==0.17.2
+opencv-python==4.10.0.84
+numpy==1.26.4
+Pillow==10.2.0
