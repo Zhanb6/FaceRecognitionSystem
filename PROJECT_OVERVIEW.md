@@ -230,3 +230,6 @@ python3 create_superuser.py
 - [README.md] — documented the recognition-log deletion endpoint.
 - [app/routers/logs_router.py] — added `DELETE /logs/` for deleting all visible recognition logs with superadmin/company-admin scoping.
 - [README.md] — documented bulk recognition-log deletion.
+- [app/routers/logs_router.py] — reports and stores `0%` accuracy when recognition is rejected by threshold, missing profile, or camera-access rules.
+- [app/routers/logs_router.py] — returns `Точность ниже порога` when FaceNet similarity exists but is below the configured threshold.
+- [frontend/src/Dashboard.tsx] — shows raw FaceNet similarity under rejected recognition checks for threshold debugging.

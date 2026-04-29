@@ -1931,6 +1931,11 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   <div style={{ fontSize: 13, color: '#64748b' }}>
                     Accuracy: {recognitionCheckResult.accuracy.toFixed(1)}% / Порог: {recognitionCheckResult.threshold.toFixed(1)}%
                   </div>
+                  {!recognitionCheckResult.recognized && recognitionCheckResult.similarity > 0 && (
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
+                      Сходство FaceNet: {(recognitionCheckResult.similarity * 100).toFixed(1)}%
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -193,12 +193,15 @@ def check_recognition(
     message = None
     if result.get("recognized"):
         person, message = _resolve_allowed_person(result.get("name", ""), camera, db)
+    elif float(result.get("score", 0.0)) > 0:
+        message = "Точность ниже порога"
 
+    effective_accuracy = float(result.get("accuracy", 0.0)) if person else 0.0
     log = RecognitionLog(
         camera_account_id=camera.id,
         person_id=person.id if person else None,
         unknown_face=not bool(person),
-        confidence=float(result.get("accuracy", 0.0)),
+        confidence=effective_accuracy,
     )
     db.add(log)
     db.commit()
@@ -208,7 +211,7 @@ def check_recognition(
         "log": _log_out(log),
         "recognized": bool(person),
         "person_name": log.person.full_name if log.person else None,
-        "accuracy": float(result.get("accuracy", 0.0)),
+        "accuracy": effective_accuracy,
         "threshold": round(threshold * 100, 1),
         "similarity": float(result.get("score", 0.0)),
         "detection_confidence": float(result.get("detection_confidence", 0.0)),
