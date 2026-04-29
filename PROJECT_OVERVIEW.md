@@ -219,3 +219,14 @@ python3 create_superuser.py
 - [facenet_recognition.py] — made recognition threshold configurable per check instead of using only the hardcoded default.
 - [app/routers/logs_router.py] — applied the requested confidence threshold and rejected matched users without access to the selected camera.
 - [frontend/src/Dashboard.tsx] — sends the configured confidence threshold during recognition checks and shows permission-denied messages.
+- [app/models.py] — added `person_name` to Face ID enrollment records so saved photos are linked to both ID and full name.
+- [app/routers/faces_router.py] — stores and returns the full user name for every new Face ID enrollment.
+- [app/migrations.py] — added a lightweight SQLite schema update that backfills existing Face ID enrollments with profile names.
+- [app/main.py] — runs lightweight schema updates after table creation on startup.
+- [facenet_recognition.py] — added deletion of FaceNet embedding records by `personface:{id}:` prefix.
+- [app/facenet_bridge.py] — exposed FaceNet embedding deletion to FastAPI.
+- [app/routers/faces_router.py] — strengthened `DELETE /faces/{id}/` to remove Face ID photos, FaceNet embeddings, camera links, and recognition-log person references.
+- [app/routers/logs_router.py] — added `GET /logs/{id}/` and `DELETE /logs/{id}/` with company-scoped access and delete checks.
+- [README.md] — documented the recognition-log deletion endpoint.
+- [app/routers/logs_router.py] — added `DELETE /logs/` for deleting all visible recognition logs with superadmin/company-admin scoping.
+- [README.md] — documented bulk recognition-log deletion.

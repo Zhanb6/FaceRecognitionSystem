@@ -5,14 +5,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
+from .migrations import ensure_schema_updates
 from .routers import auth_router, faces_router, logs_router, cameras_router, users_router, audit_router
 
 # Create all tables on startup
 Base.metadata.create_all(bind=engine)
+ensure_schema_updates()
 
 app = FastAPI(
     title="Face Recognition System API",
-    description="FastAPI backend for the Face Recognition System (AITU Diploma Project)",
+    description="FastAPI backend for the Face Recognition System (FRS Diploma Project)",
     version="2.0.0",
 )
 

@@ -4,14 +4,15 @@ Faces router — CRUD for PersonFace, mirrors PersonFaceViewSet.
 import base64
 import binascii
 import logging
+import shutil
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import BASE_DIR, get_db
-from ..facenet_bridge import FaceEnrollmentError, FaceNetDependencyError, enroll_face_image
-from ..models import CustomUser, FaceEnrollment, PersonFace
+from ..facenet_bridge import FaceEnrollmentError, FaceNetDependencyError, delete_face_embeddings, enroll_face_image
+from ..models import CustomUser, FaceEnrollment, PersonFace, RecognitionLog
 from ..schemas import FaceEnrollmentRequest, PersonFaceCreate, PersonFaceUpdate
 from ..auth import get_current_user
 from ..utils import is_super_admin, can_manage_faces, log_action
@@ -77,6 +78,19 @@ def _decode_image_data(image_data: str) -> bytes:
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Image data is empty")
     return image_bytes
+
+
+def _delete_face_artifacts(face: PersonFace) -> None:
+    person_dir = FACE_ENROLLMENT_DIR / str(face.id)
+    if person_dir.exists():
+        shutil.rmtree(person_dir)
+
+    try:
+        delete_face_embeddings(face.id)
+    except FaceNetDependencyError:
+        logger.warning("FaceNet dependencies are unavailable while deleting embeddings for face %s", face.id)
+    except Exception:
+        logger.exception("Could not delete FaceNet embeddings for face %s", face.id)
 
 
 @router.get("/all_faces/")
@@ -192,6 +206,7 @@ def enroll_face_id(
 
     enrollment = FaceEnrollment(
         person_id=face.id,
+        person_name=face.full_name,
         image_path=str(image_path.relative_to(BASE_DIR)),
         embedding_key=embedding_key,
         detection_confidence=float(result.get("confidence", 0.0)),
@@ -205,6 +220,7 @@ def enroll_face_id(
         "message": "Face ID сохранен",
         "id": enrollment.id,
         "person": face.id,
+        "person_name": enrollment.person_name,
         "image_path": enrollment.image_path,
         "embedding_key": enrollment.embedding_key,
         "detection_confidence": enrollment.detection_confidence,
@@ -263,6 +279,12 @@ def delete_face(
         raise HTTPException(status_code=403, detail="Forbidden for this company")
 
     name = face.full_name
+    _delete_face_artifacts(face)
+    db.query(RecognitionLog).filter(RecognitionLog.person_id == face.id).update(
+        {RecognitionLog.person_id: None, RecognitionLog.unknown_face: True},
+        synchronize_session=False,
+    )
+    face.allowed_cameras.clear()
     db.delete(face)
     db.commit()
     log_action(db, current_user, "Удаление профиля", f"Удален профиль: **{name}**")

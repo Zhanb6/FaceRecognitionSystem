@@ -90,6 +90,7 @@ class FaceEnrollment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     person_id = Column(Integer, ForeignKey("person_faces.id"), nullable=False)
+    person_name = Column(String(255), default="")
     image_path = Column(String(500), nullable=False)
     embedding_key = Column(String(255), nullable=False)
     detection_confidence = Column(Float, default=0.0)

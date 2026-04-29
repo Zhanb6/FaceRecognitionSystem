@@ -14,7 +14,7 @@ from ..facenet_bridge import FaceEnrollmentError, FaceNetDependencyError, recogn
 from ..models import CustomUser, PersonFace, RecognitionLog
 from ..schemas import RecognitionCheckRequest, RecognitionLogCreate
 from ..auth import get_current_user
-from ..utils import is_super_admin
+from ..utils import is_company_admin, is_super_admin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -65,6 +65,22 @@ def _get_logs_queryset(user: CustomUser, db: Session):
         .order_by(RecognitionLog.timestamp.desc())
         .all()
     )
+
+
+def _can_access_log(user: CustomUser, log: RecognitionLog) -> bool:
+    if is_super_admin(user):
+        return True
+    if user.is_camera:
+        return log.camera_account_id == user.id
+    return bool(log.camera_account and log.camera_account.company_id == user.company_id)
+
+
+def _can_delete_log(user: CustomUser, log: RecognitionLog) -> bool:
+    if is_super_admin(user):
+        return True
+    if not is_company_admin(user):
+        return False
+    return bool(log.camera_account and log.camera_account.company_id == user.company_id)
 
 
 def _get_visible_camera(user: CustomUser, camera_id: Optional[int], db: Session) -> CustomUser:
@@ -136,6 +152,20 @@ def list_logs(
     return [_log_out(l) for l in logs]
 
 
+@router.get("/{log_id}/")
+def get_log(
+    log_id: int,
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    log = db.query(RecognitionLog).filter(RecognitionLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_access_log(current_user, log):
+        raise HTTPException(status_code=403, detail="Forbidden for this company")
+    return _log_out(log)
+
+
 @router.post("/check/", status_code=status.HTTP_201_CREATED)
 def check_recognition(
     body: RecognitionCheckRequest,
@@ -184,6 +214,51 @@ def check_recognition(
         "detection_confidence": float(result.get("detection_confidence", 0.0)),
         "message": message or ("Пользователь распознан" if person else "Пользователь не распознан"),
     }
+
+
+@router.delete("/{log_id}/", status_code=status.HTTP_204_NO_CONTENT)
+def delete_log(
+    log_id: int,
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    log = db.query(RecognitionLog).filter(RecognitionLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_delete_log(current_user, log):
+        raise HTTPException(status_code=403, detail="Forbidden for this company")
+
+    db.delete(log)
+    db.commit()
+
+
+@router.delete("/", status_code=status.HTTP_200_OK)
+def delete_logs(
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if is_super_admin(current_user):
+        deleted = db.query(RecognitionLog).delete(synchronize_session=False)
+    elif is_company_admin(current_user):
+        company_camera_ids = [
+            camera.id
+            for camera in db.query(CustomUser.id)
+            .filter(CustomUser.is_camera.is_(True), CustomUser.company_id == current_user.company_id)
+            .all()
+        ]
+        if not company_camera_ids:
+            deleted = 0
+        else:
+            deleted = (
+                db.query(RecognitionLog)
+                .filter(RecognitionLog.camera_account_id.in_(company_camera_ids))
+                .delete(synchronize_session=False)
+            )
+    else:
+        raise HTTPException(status_code=403, detail="Not enough permissions to delete recognition logs")
+
+    db.commit()
+    return {"deleted": deleted}
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)

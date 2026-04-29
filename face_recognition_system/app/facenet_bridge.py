@@ -83,3 +83,12 @@ def recognize_face_image(image_bytes: bytes, threshold: float) -> dict:
         raise FaceNetDependencyError(str(exc)) from exc
     except ValueError as exc:
         raise FaceEnrollmentError(str(exc)) from exc
+
+
+def delete_face_embeddings(face_id: int) -> list[str]:
+    module = _load_facenet_module()
+    prefix = f"personface:{face_id}:"
+    try:
+        return module.delete_people_by_prefix(prefix, FACENET_DATABASE)
+    except getattr(module, "FaceNetUnavailableError", RuntimeError) as exc:
+        raise FaceNetDependencyError(str(exc)) from exc

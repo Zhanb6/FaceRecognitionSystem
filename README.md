@@ -64,6 +64,8 @@ python3 create_superuser.py
 | POST   | /api/auth/faces/           | Yes    | Create a face profile              |
 | PATCH  | /api/auth/faces/{id}/      | Yes    | Update a face profile              |
 | DELETE | /api/auth/faces/{id}/      | Yes    | Delete a face profile              |
+| DELETE | /api/auth/logs/            | Yes    | Delete visible recognition logs    |
+| DELETE | /api/auth/logs/{id}/       | Yes    | Delete a recognition log           |
 | GET    | /api/auth/cameras/         | Yes    | List camera accounts               |
 | POST   | /api/auth/cameras/create/  | Yes    | Create a camera account            |
 

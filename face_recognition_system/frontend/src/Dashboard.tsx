@@ -2238,7 +2238,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 <input
                   value={requestCompanyName}
                   onChange={e => setRequestCompanyName(e.target.value)}
-                  placeholder="Напр., AITU"
+                  placeholder="Напр., FRS"
                   style={S.settingInput}
                 />
               </div>
@@ -2279,7 +2279,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
       {/* Top bar */}
       <header style={S.topbar}>
-        <div style={S.topbarBadge}>AITU</div>
+        <div style={S.topbarBadge}>FRS</div>
         <span style={S.topbarTitle}>Face Recognition System — Admin Panel</span>
         <div style={S.topbarUser}>
           <div style={S.userAvatar}>{initial}</div>

@@ -115,14 +115,25 @@ def add_person(database, name, embedding, path=DB_FILE):
     return len(database[name])
 
 
-def delete_person(database, name):
+def delete_person(database, name, path=DB_FILE):
     if name not in database or name.startswith("__"):
         print(f"{name!r} not found.")
         return
 
     del database[name]
-    save_database(database)
+    save_database(database, path)
     print(f"Deleted {name!r}.")
+
+
+def delete_people_by_prefix(prefix, database_path=DB_FILE):
+    database = load_database(database_path)
+    deleted = [name for name in get_people(database) if name.startswith(prefix)]
+    for name in deleted:
+        del database[name]
+
+    if deleted:
+        save_database(database, database_path)
+    return deleted
 
 
 def clamp_box(box, width, height):
