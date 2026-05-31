@@ -346,7 +346,6 @@ const AuthForm: FC<AuthFormProps> = ({
   const [regLoading, setRegLoading] = useState(false)
 
   const loginRef = useRef<HTMLInputElement>(null)
-  const passwordRef = useRef<HTMLInputElement>(null)
 
   const shake = (field: 'login' | 'password') => {
     if (field === 'login') {
@@ -358,21 +357,21 @@ const AuthForm: FC<AuthFormProps> = ({
 
   const handleLogin = useCallback(async () => {
     if (fetchingAuth) return
-    if (!login) { loginRef.current?.focus(); shake('login'); return }
-    if (!password) { passwordRef.current?.focus(); shake('password'); return }
+    const loginValue = login.trim()
+    if (!loginValue) { loginRef.current?.focus(); shake('login'); return }
     try {
       setFetchingAuth(true)
       setAuthStatus(null)
-      setAuthError('Неверный логин или пароль')
+      setAuthError('Неверный логин, название камеры или пароль')
       setSuccessMsg(null)
       const data = await apiRequest<AuthResponse>('/api/auth/login/', {
         method: 'POST',
-        body: toJsonBody({ login, password }),
+        body: toJsonBody({ login: loginValue, password }),
       })
       localStorage.setItem('access', data.tokens.access)
       localStorage.setItem('refresh', data.tokens.refresh)
       localStorage.setItem('user_data', JSON.stringify(data.user))
-      const uname = data.user?.username || login
+      const uname = data.user?.username || loginValue
       localStorage.setItem('username', uname)
       setUser(data.user)
       setLoggedUsername(uname)
@@ -381,7 +380,7 @@ const AuthForm: FC<AuthFormProps> = ({
       setTimeout(() => setIsLoggedIn(true), 600)
     } catch (error) {
       console.error('Login failed:', error)
-      setAuthError(getErrorMessage(error, 'Неверный логин или пароль'))
+      setAuthError(getErrorMessage(error, 'Неверный логин, название камеры или пароль'))
       setAuthStatus(false)
     } finally {
       setFetchingAuth(false)
@@ -423,7 +422,7 @@ const AuthForm: FC<AuthFormProps> = ({
     if (e.key === 'Enter') handleLogin()
   }
 
-  const isLoginReady = login.trim() && password.trim()
+  const isLoginReady = Boolean(login.trim())
   const isRegReady = regUsername && regEmail && regPassword && regPassword2
 
   if (isLoggedIn) {
@@ -510,10 +509,10 @@ const AuthForm: FC<AuthFormProps> = ({
                   </div>
 
                   <div style={S.fieldWrap}>
-                    <span style={S.floatLabel}>Пароль</span>
+                    <span style={S.floatLabel}>Пароль (для камер не нужен)</span>
                     <PasswordInput
                       value={password}
-                      placeholder="Введите пароль"
+                      placeholder="Введите пароль или оставьте пустым для камеры"
                       onChange={(e) => setPassword(e.target.value)}
                       onKeyDown={onKeyEnter}
                       shake={passwordShake}

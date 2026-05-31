@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import logging
 import pickle
+import sys
 import time
+from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -22,23 +26,97 @@ except ImportError:
 
 from PIL import Image
 
-MODEL_ID = "facenet_vggface2_512d"
-MODEL_NAME = "vggface2"
-DB_FILE = Path("facenet_database.pkl")
 
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+DB_FILE = BASE_DIR / "facenet_database.pkl"
 CAMERA_INDEX = 0
-FACE_INPUT_SIZE = 160
 MIN_FACE_SIZE = 80
 MIN_DETECTION_CONFIDENCE = 0.90
 RECOGNITION_THRESHOLD = 0.70
-
-WINDOW_TITLE = "FaceNet Face Recognition"
+WINDOW_TITLE = "Multi-model Face Recognition"
 
 logger = logging.getLogger(__name__)
 
 
 class FaceNetUnavailableError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    key: str
+    label: str
+    model_id: str
+    input_size: int
+    embedding_size: int
+    database_path: Path
+    checkpoint_path: Path | None
+    power_watts: float
+
+
+MODEL_CONFIGS = {
+    "facenet": RuntimeConfig(
+        key="facenet",
+        label="FaceNet",
+        model_id="facenet_vggface2_512d",
+        input_size=160,
+        embedding_size=512,
+        database_path=DB_FILE,
+        checkpoint_path=None,
+        power_watts=18.0,
+    ),
+    "mobilefacenet": RuntimeConfig(
+        key="mobilefacenet",
+        label="MobileFaceNet",
+        model_id="mobilefacenet_128d",
+        input_size=112,
+        embedding_size=128,
+        database_path=BASE_DIR / "mobilefacenet_database.pkl",
+        checkpoint_path=BASE_DIR / "experiments" / "mobilefacenet" / "best.pt",
+        power_watts=6.0,
+    ),
+    "efficientnet_lite0": RuntimeConfig(
+        key="efficientnet_lite0",
+        label="EfficientNet-Lite0",
+        model_id="efficientnet_lite0_512d",
+        input_size=112,
+        embedding_size=512,
+        database_path=BASE_DIR / "efficientnet_lite0_database.pkl",
+        checkpoint_path=BASE_DIR / "experiments" / "efficientnet_lite0" / "best.pt",
+        power_watts=9.0,
+    ),
+}
+MODEL_ALIASES = {
+    "facenet-cpu": "facenet",
+    "facenet-gpu": "facenet",
+    "efficientnet-lite0": "efficientnet_lite0",
+    "efficientnet": "efficientnet_lite0",
+}
+
+
+def normalize_model_name(model_name=None):
+    key = (model_name or "efficientnet_lite0").strip().lower()
+    key = MODEL_ALIASES.get(key, key)
+    if key not in MODEL_CONFIGS:
+        raise ValueError(f"Unknown model '{model_name}'. Available models: {', '.join(MODEL_CONFIGS)}")
+    return key
+
+
+def list_models():
+    return [
+        {
+            "key": config.key,
+            "label": config.label,
+            "input_size": config.input_size,
+            "embedding_size": config.embedding_size,
+            "database_path": str(config.database_path),
+            "checkpoint_path": str(config.checkpoint_path) if config.checkpoint_path else None,
+        }
+        for config in MODEL_CONFIGS.values()
+    ]
 
 
 def ensure_facenet_available():
@@ -49,7 +127,7 @@ def ensure_facenet_available():
         missing.append("facenet-pytorch")
     if missing:
         raise FaceNetUnavailableError(
-            "FaceNet dependencies are not installed: " + ", ".join(sorted(set(missing)))
+            "Face recognition dependencies are not installed: " + ", ".join(sorted(set(missing)))
         )
 
 
@@ -60,51 +138,45 @@ def get_device():
 
 def normalize(vector):
     norm = np.linalg.norm(vector)
-    if norm == 0:
-        return vector
-    return vector / norm
-
-
-def load_database(path=DB_FILE):
-    if not path.exists():
-        return {"__model__": MODEL_ID}
-
-    try:
-        with path.open("rb") as file:
-            database = pickle.load(file)
-    except Exception:
-        logger.exception("Could not load database %s", path)
-        return {"__model__": MODEL_ID}
-
-    saved_model = database.get("__model__")
-    if saved_model != MODEL_ID:
-        print(f"Database model mismatch: {saved_model!r} != {MODEL_ID!r}")
-        print("Starting with an empty FaceNet database.")
-        return {"__model__": MODEL_ID}
-
-    people = get_people(database)
-    print(f"Loaded {len(people)} people: {list(people.keys())}")
-    return database
-
-
-def save_database(database, path=DB_FILE):
-    with path.open("wb") as file:
-        pickle.dump(database, file)
+    return vector / norm if norm > 0 else vector
 
 
 def get_people(database):
     return {name: vectors for name, vectors in database.items() if not name.startswith("__")}
 
 
-def list_people(database):
-    people = get_people(database)
-    if not people:
-        print("Database is empty.")
-        return
+def load_database(path=DB_FILE, model_name=None):
+    model_key = normalize_model_name(model_name) if model_name else "facenet"
+    config = MODEL_CONFIGS[model_key]
+    path = Path(path) if path is not None else config.database_path
 
-    print(f"People in database ({len(people)}):")
-    for name, vectors in people.items():
-        print(f"  - {name}: {len(vectors)} samples")
+    if not path.exists():
+        return {"__model__": config.model_id, "__backbone__": config.key}
+
+    try:
+        with path.open("rb") as file:
+            database = pickle.load(file)
+    except Exception:
+        logger.exception("Could not load database %s", path)
+        return {"__model__": config.model_id, "__backbone__": config.key}
+
+    saved_model = database.get("__model__")
+    if saved_model != config.model_id:
+        print(f"Database model mismatch in {path}: {saved_model!r} != {config.model_id!r}")
+        print(f"Starting with an empty {config.label} database.")
+        return {"__model__": config.model_id, "__backbone__": config.key}
+
+    database.setdefault("__backbone__", config.key)
+    people = get_people(database)
+    print(f"Loaded {len(people)} people for {config.label}: {list(people.keys())}")
+    return database
+
+
+def save_database(database, path=DB_FILE):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as file:
+        pickle.dump(database, file)
 
 
 def add_person(database, name, embedding, path=DB_FILE):
@@ -125,14 +197,20 @@ def delete_person(database, name, path=DB_FILE):
     print(f"Deleted {name!r}.")
 
 
-def delete_people_by_prefix(prefix, database_path=DB_FILE):
-    database = load_database(database_path)
-    deleted = [name for name in get_people(database) if name.startswith(prefix)]
-    for name in deleted:
-        del database[name]
+def delete_people_by_prefix(prefix, database_path=None, model_name=None):
+    model_keys = [normalize_model_name(model_name)] if model_name else list(MODEL_CONFIGS)
+    deleted = []
+    for model_key in model_keys:
+        config = MODEL_CONFIGS[model_key]
+        path = Path(database_path) if database_path and model_name else config.database_path
+        database = load_database(path, model_key)
+        deleted_for_model = [name for name in get_people(database) if name.startswith(prefix)]
+        for name in deleted_for_model:
+            del database[name]
 
-    if deleted:
-        save_database(database, database_path)
+        if deleted_for_model:
+            save_database(database, path)
+        deleted.extend(f"{model_key}:{name}" for name in deleted_for_model)
     return deleted
 
 
@@ -147,22 +225,73 @@ def clamp_box(box, width, height):
     return x1, y1, x2, y2
 
 
-def preprocess_face(face_crop):
-    face = face_crop.resize((FACE_INPUT_SIZE, FACE_INPUT_SIZE))
+def preprocess_face(face_crop, input_size):
+    face = face_crop.resize((input_size, input_size))
     array = np.asarray(face).astype(np.float32)
-    array = (array - 127.5) / 128.0
+    array = (array / 255.0 - 0.5) / 0.5
     tensor = torch.from_numpy(array).permute(2, 0, 1).unsqueeze(0)
     return tensor
 
 
-def extract_embedding(face_crop, model, device):
+def _build_model(config):
+    if config.key == "facenet":
+        return InceptionResnetV1(pretrained="vggface2")
+    if config.key == "mobilefacenet":
+        from face_models.mobilefacenet import MobileFaceNet
+
+        return MobileFaceNet(embedding_size=config.embedding_size, input_size=config.input_size)
+    if config.key == "efficientnet_lite0":
+        from face_models.efficientnet_lite import EfficientNetLite0Face
+
+        return EfficientNetLite0Face(embedding_size=config.embedding_size, pretrained=False)
+    raise ValueError(f"Unknown model '{config.key}'")
+
+
+@lru_cache(maxsize=len(MODEL_CONFIGS))
+def get_model_runtime(model_name="efficientnet_lite0"):
+    ensure_facenet_available()
+    model_key = normalize_model_name(model_name)
+    config = MODEL_CONFIGS[model_key]
+    device = get_device()
     try:
-        tensor = preprocess_face(face_crop).to(device)
+        model = _build_model(config).eval().to(device)
+    except Exception as exc:
+        raise FaceNetUnavailableError(f"Could not load {config.label}: {exc}") from exc
+
+    if config.checkpoint_path:
+        if not config.checkpoint_path.exists():
+            raise FaceNetUnavailableError(f"Checkpoint not found: {config.checkpoint_path}")
+        try:
+            checkpoint = torch.load(config.checkpoint_path, map_location="cpu")
+            checkpoint_model = checkpoint.get("model_name")
+            if checkpoint_model and checkpoint_model != config.key:
+                raise FaceNetUnavailableError(
+                    f"Checkpoint model '{checkpoint_model}' does not match '{config.key}'"
+                )
+            model.load_state_dict(checkpoint["model_state_dict"])
+        except FaceNetUnavailableError:
+            raise
+        except Exception as exc:
+            raise FaceNetUnavailableError(f"Could not load {config.label} checkpoint: {exc}") from exc
+        model.eval().to(device)
+
+    return model, device, config
+
+
+@lru_cache(maxsize=1)
+def get_detector():
+    ensure_facenet_available()
+    return MTCNN(keep_all=True, device=get_device(), min_face_size=MIN_FACE_SIZE)
+
+
+def extract_embedding(face_crop, model, device, input_size):
+    try:
+        tensor = preprocess_face(face_crop, input_size).to(device)
         with torch.no_grad():
             embedding = model(tensor)[0].cpu().numpy()
         return normalize(embedding)
     except Exception:
-        logger.exception("Could not extract FaceNet embedding")
+        logger.exception("Could not extract face embedding")
         return None
 
 
@@ -173,7 +302,10 @@ def recognize_face(embedding, database, threshold=RECOGNITION_THRESHOLD):
 
     for name, samples in people.items():
         for sample in samples:
-            score = float(np.dot(embedding, normalize(np.asarray(sample).flatten())))
+            sample_vector = normalize(np.asarray(sample).flatten())
+            if sample_vector.shape != embedding.shape:
+                continue
+            score = float(np.dot(embedding, sample_vector))
             if score > best_score:
                 best_name = name
                 best_score = score
@@ -204,61 +336,64 @@ def detect_faces(frame_rgb, detector):
     return detections
 
 
-@lru_cache(maxsize=1)
-def get_facenet_runtime():
-    ensure_facenet_available()
-    device = get_device()
-    detector = MTCNN(keep_all=True, device=device, min_face_size=MIN_FACE_SIZE)
-    model = InceptionResnetV1(pretrained=MODEL_NAME).eval().to(device)
-    return detector, model, device
-
-
-def enroll_image_bytes(name, image_bytes, database_path=DB_FILE):
-    detector, model, device = get_facenet_runtime()
-
+def _best_face_crop(image_bytes):
     image = Image.open(BytesIO(image_bytes)).convert("RGB")
     frame_rgb = np.asarray(image)
-    detections = detect_faces(frame_rgb, detector)
+    detections = detect_faces(frame_rgb, get_detector())
     if not detections:
         raise ValueError("No face detected")
 
     best_box, best_prob = max(detections, key=lambda item: item[1])
     x1, y1, x2, y2 = best_box
-    face_crop = Image.fromarray(frame_rgb[y1:y2, x1:x2])
-    embedding = extract_embedding(face_crop, model, device)
-    if embedding is None:
-        raise ValueError("Could not compute FaceNet embedding")
+    return Image.fromarray(frame_rgb[y1:y2, x1:x2]), best_box, best_prob
 
-    database = load_database(database_path)
-    samples = add_person(database, name, embedding, database_path)
 
+def enroll_image_bytes(name, image_bytes, database_path=None, model_name=None):
+    face_crop, best_box, best_prob = _best_face_crop(image_bytes)
+    model_keys = [normalize_model_name(model_name)] if model_name else list(MODEL_CONFIGS)
+    results = {}
+
+    for model_key in model_keys:
+        model, device, config = get_model_runtime(model_key)
+        embedding = extract_embedding(face_crop, model, device, config.input_size)
+        if embedding is None:
+            raise ValueError(f"Could not compute {config.label} embedding")
+
+        path = Path(database_path) if database_path and model_name else config.database_path
+        database = load_database(path, model_key)
+        samples = add_person(database, name, embedding, path)
+        results[model_key] = {
+            "model_name": config.label,
+            "embedding": embedding.astype(np.float32),
+            "samples": samples,
+        }
+
+    primary_key = model_keys[0]
+    primary = results[primary_key]
     return {
-        "embedding": embedding.astype(np.float32),
+        "embedding": primary["embedding"],
         "confidence": float(best_prob),
         "box": best_box,
-        "samples": samples,
+        "samples": primary["samples"],
+        "models": {
+            key: {"model_name": value["model_name"], "samples": value["samples"]}
+            for key, value in results.items()
+        },
     }
 
 
-def recognize_image_bytes(image_bytes, database_path=DB_FILE, threshold=RECOGNITION_THRESHOLD):
-    detector, model, device = get_facenet_runtime()
-
-    database = load_database(database_path)
+def recognize_image_bytes(image_bytes, database_path=None, threshold=RECOGNITION_THRESHOLD, model_name="efficientnet_lite0"):
+    model_key = normalize_model_name(model_name)
+    model, device, config = get_model_runtime(model_key)
+    path = Path(database_path) if database_path and model_name else config.database_path
+    database = load_database(path, model_key)
     if not get_people(database):
-        raise ValueError("FaceNet database is empty")
+        raise ValueError(f"{config.label} database is empty")
 
-    image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    frame_rgb = np.asarray(image)
-    detections = detect_faces(frame_rgb, detector)
-    if not detections:
-        raise ValueError("No face detected")
-
-    best_box, best_prob = max(detections, key=lambda item: item[1])
-    x1, y1, x2, y2 = best_box
-    face_crop = Image.fromarray(frame_rgb[y1:y2, x1:x2])
-    embedding = extract_embedding(face_crop, model, device)
+    face_crop, best_box, best_prob = _best_face_crop(image_bytes)
+    embedding = extract_embedding(face_crop, model, device, config.input_size)
     if embedding is None:
-        raise ValueError("Could not compute FaceNet embedding")
+        raise ValueError(f"Could not compute {config.label} embedding")
 
     name, score = recognize_face(embedding, database, threshold)
     return {
@@ -268,6 +403,8 @@ def recognize_image_bytes(image_bytes, database_path=DB_FILE, threshold=RECOGNIT
         "detection_confidence": float(best_prob),
         "box": best_box,
         "recognized": name != "Unknown",
+        "model_key": config.key,
+        "model_name": config.label,
     }
 
 
@@ -285,13 +422,24 @@ def enroll_from_frame(frame_rgb, detector, model, device, database):
     best_box, best_prob = max(detections, key=lambda item: item[1])
     x1, y1, x2, y2 = best_box
     face_crop = Image.fromarray(frame_rgb[y1:y2, x1:x2])
-    embedding = extract_embedding(face_crop, model, device)
+    embedding = extract_embedding(face_crop, model, device, MODEL_CONFIGS["facenet"].input_size)
     if embedding is None:
         print("Could not compute embedding.")
         return
 
-    add_person(database, name, embedding)
+    add_person(database, name, embedding, MODEL_CONFIGS["facenet"].database_path)
     print(f"Enrollment confidence: {best_prob:.2f}")
+
+
+def list_people(database):
+    people = get_people(database)
+    if not people:
+        print("Database is empty.")
+        return
+
+    print(f"People in database ({len(people)}):")
+    for name, vectors in people.items():
+        print(f"  - {name}: {len(vectors)} samples")
 
 
 def delete_interactive(database):
@@ -304,7 +452,7 @@ def delete_interactive(database):
         print("Delete cancelled.")
         return
 
-    delete_person(database, name)
+    delete_person(database, name, MODEL_CONFIGS["facenet"].database_path)
 
 
 def draw_status(frame, fps, database):
@@ -329,18 +477,18 @@ def run():
 
     device = get_device()
     print(f"Using device: {device}")
-    print(f"Loading FaceNet pretrained weights: {MODEL_NAME}")
+    print("Loading FaceNet pretrained weights: vggface2")
 
-    detector = MTCNN(keep_all=True, device=device, min_face_size=MIN_FACE_SIZE)
-    model = InceptionResnetV1(pretrained=MODEL_NAME).eval().to(device)
-    database = load_database()
+    detector = get_detector()
+    model, device, config = get_model_runtime("facenet")
+    database = load_database(config.database_path, config.key)
 
     cap = cv2.VideoCapture(CAMERA_INDEX)
     if not cap.isOpened():
         print("ERROR: Cannot open camera.")
         return
 
-    print("Controls: E = enroll | D = delete | L = list DB | Q = quit")
+    print("Controls: E = enroll | D = delete | L list DB | Q quit")
 
     previous_time = time.perf_counter()
     smoothed_fps = 0.0
@@ -364,7 +512,7 @@ def run():
 
             for (x1, y1, x2, y2), _prob in detections:
                 face_crop = Image.fromarray(frame_rgb[y1:y2, x1:x2])
-                embedding = extract_embedding(face_crop, model, device)
+                embedding = extract_embedding(face_crop, model, device, config.input_size)
 
                 if embedding is None:
                     label = "Embedding error"

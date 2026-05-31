@@ -225,6 +225,7 @@ def enroll_face_id(
         "embedding_key": enrollment.embedding_key,
         "detection_confidence": enrollment.detection_confidence,
         "samples": result.get("samples", 0),
+        "models": result.get("models", {}),
     }
 
 

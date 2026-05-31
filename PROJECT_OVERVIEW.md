@@ -196,7 +196,7 @@ python3 create_superuser.py
 - [frontend/src/Dashboard.tsx] — limited the company-account count to superadmins and added an inactive-user count for profiles without camera access.
 - [frontend/src/Dashboard.tsx] — removed superadmin overview requests to `/api/auth/users/` and `/api/auth/companies/` to avoid stale-backend 400/404 console errors.
 - [frontend/src/Dashboard.tsx] — removed the `Аккаунтов компании` overview card.
-- [facenet_recognition.py] — exposed FaceNet enrollment from image bytes with returned sample count while keeping standalone webcam mode.
+- [face_recognition_system/facenet_recognition.py] — exposed FaceNet enrollment from image bytes with returned sample count while keeping standalone webcam mode.
 - [app/models.py] — added persistent Face ID enrollment records linked to each created user profile.
 - [app/schemas.py] — added the request schema for browser-captured Face ID photos.
 - [app/facenet_bridge.py] — connected the FastAPI backend to the root FaceNet recognition script and database file.
@@ -210,20 +210,20 @@ python3 create_superuser.py
 - [requirements.txt] — pinned Pillow to the `facenet-pytorch` compatible 10.2.x line.
 - [Dockerfile] — switched the backend image to Python 3.11 and installed OpenCV runtime libraries for FaceNet dependencies.
 - [requirements.txt] — added `httpx` so FastAPI/Starlette test tooling is available with the backend dependencies.
-- [facenet_recognition.py] — added image-byte recognition against the FaceNet database with returned accuracy.
+- [face_recognition_system/facenet_recognition.py] — added image-byte recognition against the FaceNet database with returned accuracy.
 - [app/facenet_bridge.py] — exposed FaceNet recognition checks to FastAPI.
 - [app/schemas.py] — added the recognition-check request schema.
 - [app/routers/logs_router.py] — added `/logs/check/` to run AI recognition, resolve the matched profile, and write a recognition log.
 - [frontend/src/types.ts] — added recognition-check response typing and camera usernames on log rows.
 - [frontend/src/Dashboard.tsx] — added a `Проверить` camera modal in `Лог распознаваний` that shows the matched user and accuracy.
-- [facenet_recognition.py] — made recognition threshold configurable per check instead of using only the hardcoded default.
+- [face_recognition_system/facenet_recognition.py] — made recognition threshold configurable per check instead of using only the hardcoded default.
 - [app/routers/logs_router.py] — applied the requested confidence threshold and rejected matched users without access to the selected camera.
 - [frontend/src/Dashboard.tsx] — sends the configured confidence threshold during recognition checks and shows permission-denied messages.
 - [app/models.py] — added `person_name` to Face ID enrollment records so saved photos are linked to both ID and full name.
 - [app/routers/faces_router.py] — stores and returns the full user name for every new Face ID enrollment.
 - [app/migrations.py] — added a lightweight SQLite schema update that backfills existing Face ID enrollments with profile names.
 - [app/main.py] — runs lightweight schema updates after table creation on startup.
-- [facenet_recognition.py] — added deletion of FaceNet embedding records by `personface:{id}:` prefix.
+- [face_recognition_system/facenet_recognition.py] — added deletion of FaceNet embedding records by `personface:{id}:` prefix.
 - [app/facenet_bridge.py] — exposed FaceNet embedding deletion to FastAPI.
 - [app/routers/faces_router.py] — strengthened `DELETE /faces/{id}/` to remove Face ID photos, FaceNet embeddings, camera links, and recognition-log person references.
 - [app/routers/logs_router.py] — added `GET /logs/{id}/` and `DELETE /logs/{id}/` with company-scoped access and delete checks.

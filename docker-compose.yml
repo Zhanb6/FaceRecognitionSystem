@@ -11,6 +11,7 @@ services:
     volumes:
       - ./face_recognition_system:/app   # live-reload: edits reflect instantly
       - ./face_recognition_system/db.sqlite3:/app/db.sqlite3
+      - ${HOME}/.cache/torch/checkpoints:/root/.cache/torch/checkpoints
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1

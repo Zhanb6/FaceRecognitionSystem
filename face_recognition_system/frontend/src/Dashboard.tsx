@@ -13,6 +13,22 @@ interface DashboardProps {
 }
 
 const DEFAULT_FACE_ROLES = ['Студент', 'Преподаватель', 'Работник', 'Гость']
+const RECOGNITION_MODELS = [
+  { value: 'facenet', label: 'FaceNet' },
+  { value: 'mobilefacenet', label: 'MobileFaceNet' },
+  { value: 'efficientnet_lite0', label: 'EfficientNet-Lite0' },
+]
+const RECOGNITION_CHECK_TIMEOUT_MS = 20000
+const DISPLAY_TIME_ZONE = 'Asia/Almaty'
+const DISPLAY_LOCALE = 'ru-RU'
+const SETTINGS_STORAGE_KEY = 'dashboard_settings'
+const DEFAULT_SETTINGS = {
+  liveDetect: true,
+  alerts: true,
+  saveLog: true,
+  threshold: '50',
+  darkMode: false,
+}
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const S: Record<string, CSSProperties> = {
@@ -40,15 +56,15 @@ const S: Record<string, CSSProperties> = {
   },
   topbarStripe: {
     height: 3,
-    background: 'linear-gradient(90deg, #0a1f6b 0%, #1a3fd4 45%, #00aaff 75%, #00d4ff 100%)',
+    background: 'linear-gradient(90deg, var(--dash-accent-strong) 0%, var(--dash-accent) 55%, #7dd3fc 100%)',
   },
   topbarBadge: {
     width: 36, height: 36, borderRadius: '50%',
-    background: 'linear-gradient(135deg, #0a1f6b, #1a3fd4)',
+    background: 'linear-gradient(135deg, var(--dash-accent-strong), var(--dash-accent))',
     color: '#fff', display: 'flex', alignItems: 'center',
     justifyContent: 'center', fontSize: 10, fontWeight: 700,
     flexShrink: 0, letterSpacing: '-0.3px',
-    boxShadow: '0 2px 8px rgba(26,63,212,0.35)',
+    boxShadow: '0 2px 8px rgba(34,199,169,0.28)',
   },
   topbarTitle: { fontSize: 14, fontWeight: 700, color: 'var(--dash-heading)', flex: 1 },
   topbarUser: {
@@ -173,7 +189,7 @@ const S: Record<string, CSSProperties> = {
     borderRadius: 6, padding: '5px 12px',
     fontSize: 12, color: '#fff', cursor: 'pointer',
     fontFamily: "'Inter', sans-serif",
-    background: 'linear-gradient(135deg, #0a1f6b, #1a3fd4)',
+    background: 'linear-gradient(135deg, var(--dash-accent-strong), var(--dash-accent))',
     fontWeight: 600,
   },
   // ── Activity bar
@@ -234,7 +250,7 @@ const S: Record<string, CSSProperties> = {
     color: '#64748b', transition: 'all 0.2s',
   },
   primaryBtn: {
-    background: 'linear-gradient(135deg, #0a1f6b, #1a3fd4)',
+    background: 'linear-gradient(135deg, var(--dash-accent-strong), var(--dash-accent))',
     color: '#fff', border: 'none', borderRadius: 10,
     padding: '12px 24px', fontSize: 14, fontWeight: 600,
     cursor: 'pointer', transition: 'all 0.2s',
@@ -273,7 +289,7 @@ const NavItem: FC<{ icon: ReactNode; label: string; active: boolean; onClick: ()
 const Toggle: FC<{ on: boolean; onChange: () => void }> = ({ on, onChange }) => (
   <button
     onClick={onChange}
-    style={{ ...S.toggle, background: on ? '#1a3fd4' : '#cbd5e1' }}
+    style={{ ...S.toggle, background: on ? 'var(--dash-accent)' : 'var(--dash-toggle-off)' }}
   >
     <div style={{ ...S.toggleThumb, left: on ? 21 : 3 }} />
   </button>
@@ -291,32 +307,51 @@ const lightThemeVars = {
   '--dash-table-head': '#f8fafc',
   '--dash-control-bg': '#ffffff',
   '--dash-input-bg': '#ffffff',
+  '--dash-accent': '#1a3fd4',
+  '--dash-accent-strong': '#0a1f6b',
+  '--dash-accent-soft': '#dbeafe',
+  '--dash-toggle-off': '#cbd5e1',
 } as CSSProperties
 
 const darkThemeVars = {
-  '--dash-bg': '#0f172a',
-  '--dash-surface': '#111827',
-  '--dash-heading': '#f8fafc',
-  '--dash-text': '#dbe4ef',
-  '--dash-muted': '#a5b4c8',
-  '--dash-muted-soft': '#7f8ea3',
-  '--dash-border': '#334155',
-  '--dash-border-soft': '#263244',
-  '--dash-table-head': '#162033',
-  '--dash-control-bg': '#1f2937',
-  '--dash-input-bg': '#0b1220',
+  '--dash-bg': '#0b1020',
+  '--dash-surface': '#121a2a',
+  '--dash-heading': '#f7fbff',
+  '--dash-text': '#d8e3f2',
+  '--dash-muted': '#98a8bd',
+  '--dash-muted-soft': '#718198',
+  '--dash-border': '#2b3a51',
+  '--dash-border-soft': '#1f2b3d',
+  '--dash-table-head': '#172338',
+  '--dash-control-bg': '#18253a',
+  '--dash-input-bg': '#0f1726',
+  '--dash-accent': '#22c7a9',
+  '--dash-accent-strong': '#0f8f7b',
+  '--dash-accent-soft': 'rgba(34,199,169,0.16)',
+  '--dash-toggle-off': '#475569',
 } as CSSProperties
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) => {
   const [page, setPage] = useState<NavPage>('overview')
-  const [settings, setSettings] = useState(() => ({
-    liveDetect: true, alerts: true, saveLog: true, twoFactor: false,
-    threshold: '85',
-    darkMode: localStorage.getItem('dashboard_dark_mode') === 'true',
-  }))
+  const [settings, setSettings] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}') as Partial<typeof DEFAULT_SETTINGS>
+      return {
+        ...DEFAULT_SETTINGS,
+        ...saved,
+        darkMode: saved.darkMode ?? localStorage.getItem('dashboard_dark_mode') === 'true',
+      }
+    } catch {
+      return {
+        ...DEFAULT_SETTINGS,
+        darkMode: localStorage.getItem('dashboard_dark_mode') === 'true',
+      }
+    }
+  })
   const [searchUser, setSearchUser] = useState('')
   const [recognitionFilter, setRecognitionFilter] = useState<'all' | 'known' | 'unknown'>('all')
+  const [expandedLogIds, setExpandedLogIds] = useState<number[]>([])
 
   const initial = username.charAt(0).toUpperCase()
   const role = user?.role
@@ -348,8 +383,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   // Create Camera state
   const [showAddCamModal, setShowAddCamModal] = useState(false)
   const [newCamUser, setNewCamUser] = useState('')
-  const [newCamPass, setNewCamPass] = useState('')
   const [creatingCam, setCreatingCam] = useState(false)
+  const [cameraActionKey, setCameraActionKey] = useState<string | null>(null)
 
   const [showRequestModal, setShowRequestModal] = useState(false)
   const [requestLogin, setRequestLogin] = useState('')
@@ -359,6 +394,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [requestError, setRequestError] = useState('')
   const [adminSearch, setAdminSearch] = useState('')
   const [adminCameraFilter, setAdminCameraFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [deletingAdminId, setDeletingAdminId] = useState<number | null>(null)
   const [selectedCameraLogFilter, setSelectedCameraLogFilter] = useState<CameraAcc | null>(null)
   const [dashboardError, setDashboardError] = useState('')
 
@@ -389,6 +425,9 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   const [recognitionCheckResult, setRecognitionCheckResult] = useState<RecognitionCheckResponse | null>(null)
   const [checkingRecognition, setCheckingRecognition] = useState(false)
   const [recognitionCheckCameraId, setRecognitionCheckCameraId] = useState('')
+  const [recognitionModel, setRecognitionModel] = useState('')
+  const recognitionCheckingRef = useRef(false)
+  const recognitionAbortRef = useRef<AbortController | null>(null)
   const recognitionCheckVideoRef = useRef<HTMLVideoElement | null>(null)
 
   const loadOptionalDashboardSection = useCallback(async <T,>(
@@ -497,9 +536,10 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   useEffect(() => () => stopRecognitionCheckCamera(), [stopRecognitionCheckCamera])
 
   useEffect(() => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
     localStorage.setItem('dashboard_dark_mode', String(settings.darkMode))
-    document.body.style.background = settings.darkMode ? '#0f172a' : '#f0f4fa'
-  }, [settings.darkMode])
+    document.body.style.background = settings.darkMode ? '#0b1020' : '#f0f4fa'
+  }, [settings])
 
   const handleAddFace = async () => {
     if (!canManageFaces) return
@@ -536,7 +576,8 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
   const handleCreateCamera = async () => {
     if (!canManageCameras) return
-    if (!newCamUser || !newCamPass) return
+    const cameraName = newCamUser.trim()
+    if (!cameraName) return
     setCreatingCam(true)
     try {
       setDashboardError('')
@@ -544,19 +585,70 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         method: 'POST',
         auth: true,
         body: toJsonBody({
-          username: newCamUser,
-          password: newCamPass
+          username: cameraName
         })
       })
       setShowAddCamModal(false)
       setNewCamUser('')
-      setNewCamPass('')
       fetchDashboardData()
     } catch (error) {
       console.error('Error creating camera:', error)
       setDashboardError(getErrorMessage(error, 'Ошибка при создании камеры'))
     } finally {
       setCreatingCam(false)
+    }
+  }
+
+  const handleToggleCameraActive = async (camera: CameraAcc) => {
+    if (!canManageCameras) return
+    const actionKey = `active-${camera.id}`
+    setCameraActionKey(actionKey)
+    try {
+      setDashboardError('')
+      const data = await apiRequest<{ is_active: boolean }>(`/api/auth/cameras/${camera.id}/active/`, {
+        method: 'PATCH',
+        auth: true,
+      })
+      setCameras(prev => prev.map(item => (
+        item.id === camera.id ? { ...item, is_active: data.is_active } : item
+      )))
+      await fetchDashboardData()
+    } catch (error) {
+      console.error('Error toggling camera:', error)
+      setDashboardError(getErrorMessage(error, 'Не удалось изменить статус камеры'))
+    } finally {
+      setCameraActionKey(null)
+    }
+  }
+
+  const handleDeleteCamera = async (camera: CameraAcc) => {
+    if (!canManageCameras) return
+    if (!confirm(`Удалить камеру "${camera.username}"? Логи этой камеры тоже будут удалены.`)) return
+
+    const actionKey = `delete-${camera.id}`
+    setCameraActionKey(actionKey)
+    try {
+      setDashboardError('')
+      await apiRequest<null>(`/api/auth/cameras/${camera.id}/`, {
+        method: 'DELETE',
+        auth: true,
+      })
+      setCameras(prev => prev.filter(item => item.id !== camera.id))
+      setExpandedCameraIds(prev => prev.filter(id => id !== camera.id))
+      setCameraFacesMap(prev => {
+        const next = { ...prev }
+        delete next[camera.id]
+        return next
+      })
+      if (selectedCameraLogFilter?.id === camera.id) {
+        setSelectedCameraLogFilter(null)
+      }
+      await fetchDashboardData()
+    } catch (error) {
+      console.error('Error deleting camera:', error)
+      setDashboardError(getErrorMessage(error, 'Не удалось удалить камеру'))
+    } finally {
+      setCameraActionKey(null)
     }
   }
   const handleDeleteFace = async (id: number) => {
@@ -682,6 +774,11 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   }
 
   const openRecognitionCheck = async () => {
+    if (!recognitionModel) {
+      setRecognitionCheckError('Сначала выберите модель распознавания')
+      return
+    }
+
     setRecognitionCheckOpen(true)
     setRecognitionCheckError('')
     setRecognitionCheckResult(null)
@@ -705,19 +802,26 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   }
 
   const closeRecognitionCheck = () => {
+    recognitionAbortRef.current?.abort()
+    recognitionAbortRef.current = null
     stopRecognitionCheckCamera()
     setRecognitionCheckOpen(false)
     setRecognitionCheckError('')
     setRecognitionCheckResult(null)
+    recognitionCheckingRef.current = false
     setCheckingRecognition(false)
   }
 
-  const handleRecognitionCheck = async () => {
+  const handleRecognitionCheck = useCallback(async () => {
+    if (recognitionCheckingRef.current) return
+    if (!recognitionModel) {
+      setRecognitionCheckError('Сначала выберите модель распознавания')
+      return
+    }
     if (!recognitionCheckVideoRef.current || !recognitionCheckStream) return
 
     const video = recognitionCheckVideoRef.current
     if (!video.videoWidth || !video.videoHeight) {
-      setRecognitionCheckError('Камера еще не готова. Подождите секунду и попробуйте снова.')
       return
     }
 
@@ -733,27 +837,59 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     context.drawImage(video, 0, 0, canvas.width, canvas.height)
     const imageData = canvas.toDataURL('image/jpeg', 0.9)
 
+    recognitionCheckingRef.current = true
     setCheckingRecognition(true)
+    const controller = new AbortController()
+    recognitionAbortRef.current = controller
+    const timeoutId = window.setTimeout(() => controller.abort(), RECOGNITION_CHECK_TIMEOUT_MS)
     try {
       setRecognitionCheckError('')
       const data = await apiRequest<RecognitionCheckResponse>('/api/auth/logs/check/', {
         method: 'POST',
         auth: true,
+        signal: controller.signal,
         body: toJsonBody({
           image_data: imageData,
           camera_id: recognitionCheckCameraId ? Number(recognitionCheckCameraId) : undefined,
           threshold: Number(settings.threshold) || 0,
+          model_name: recognitionModel,
+          save_log: settings.saveLog,
         }),
       })
       setRecognitionCheckResult(data)
-      setLogs(prev => [data.log, ...prev.filter(log => log.id !== data.log.id)])
+      const savedLog = data.log
+      if (savedLog) {
+        setLogs(prev => [savedLog, ...prev.filter(log => log.id !== savedLog.id)])
+      }
     } catch (error) {
       console.error('Error checking recognition', error)
-      setRecognitionCheckError(getErrorMessage(error, 'Не удалось выполнить проверку'))
+      const isAbort = error instanceof Error && error.name === 'AbortError'
+      setRecognitionCheckError(isAbort ? 'Проверка заняла слишком много времени. Попробуйте другую модель или повторите позже.' : getErrorMessage(error, 'Не удалось выполнить проверку'))
     } finally {
+      window.clearTimeout(timeoutId)
+      if (recognitionAbortRef.current === controller) {
+        recognitionAbortRef.current = null
+      }
+      recognitionCheckingRef.current = false
       setCheckingRecognition(false)
     }
-  }
+  }, [recognitionCheckCameraId, recognitionCheckStream, recognitionModel, settings.saveLog, settings.threshold])
+
+  useEffect(() => {
+    if (!recognitionCheckOpen || !recognitionCheckStream || !settings.liveDetect) return
+
+    const firstRun = window.setTimeout(() => {
+      void handleRecognitionCheck()
+    }, 1200)
+    const interval = window.setInterval(() => {
+      void handleRecognitionCheck()
+    }, 3500)
+
+    return () => {
+      window.clearTimeout(firstRun)
+      window.clearInterval(interval)
+    }
+  }, [handleRecognitionCheck, recognitionCheckOpen, recognitionCheckStream, settings.liveDetect])
 
   const handleRemoveFaceFromCamera = async (camId: number, faceId: number) => {
     if (!canManageCameras) return
@@ -833,6 +969,44 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     return true
   })
 
+  const toggleLogDetails = (logId: number) => {
+    setExpandedLogIds(prev => (
+      prev.includes(logId) ? prev.filter(id => id !== logId) : [...prev, logId]
+    ))
+  }
+
+  const formatMetric = (value: number | null | undefined, digits = 2) => (
+    typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '-'
+  )
+
+  const parseApiDate = (value: string) => {
+    const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
+    return new Date(hasTimezone ? value : `${value}Z`)
+  }
+
+  const formatDateTime = (value: string) => (
+    parseApiDate(value).toLocaleString(DISPLAY_LOCALE, {
+      timeZone: DISPLAY_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+  )
+
+  const formatTime = (value: string) => (
+    parseApiDate(value).toLocaleTimeString(DISPLAY_LOCALE, {
+      timeZone: DISPLAY_TIME_ZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+  )
+
   const handleCycleRecognitionFilter = () => {
     setRecognitionFilter(current => {
       if (current === 'all') return 'known'
@@ -842,13 +1016,17 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   }
 
   const handleExportLogsCsv = () => {
-    const header = ['id', 'person_name', 'timestamp', 'confidence', 'status']
+    const header = ['id', 'person_name', 'timestamp', 'confidence', 'status', 'model', 'processing_time_ms', 'average_fps', 'energy_wh']
     const rows = filteredLogs.map(log => [
       log.id,
       log.person_name || 'Неизвестный',
-      log.timestamp,
+      formatDateTime(log.timestamp),
       log.confidence.toFixed(1),
       log.unknown_face ? 'unknown' : 'success',
+      log.model_name || 'EfficientNet-Lite0',
+      formatMetric(log.processing_time_ms),
+      formatMetric(log.average_fps),
+      formatMetric(log.energy_consumption_wh, 6),
     ])
     const escapeCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`
     const csv = [header, ...rows].map(row => row.map(escapeCell).join(',')).join('\n')
@@ -872,14 +1050,14 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
   const todayLogs = logs.filter(log => {
-    const timestamp = new Date(log.timestamp)
+    const timestamp = parseApiDate(log.timestamp)
     return timestamp >= todayStart && timestamp < tomorrowStart
   })
   const yesterdayLogsCount = logs.filter(log => {
-    const timestamp = new Date(log.timestamp)
+    const timestamp = parseApiDate(log.timestamp)
     return timestamp >= yesterdayStart && timestamp < todayStart
   }).length
-  const recentLogs = logs.filter(log => new Date(log.timestamp) >= sevenDaysAgo)
+  const recentLogs = logs.filter(log => parseApiDate(log.timestamp) >= sevenDaysAgo)
   const successfulRecentLogs = recentLogs.filter(log => !log.unknown_face).length
   const accuracyValue = recentLogs.length > 0 ? (successfulRecentLogs / recentLogs.length) * 100 : 0
   const activeCamerasCount = cameras.filter(camera => camera.is_active).length
@@ -908,12 +1086,13 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     return {
       label: String(hourStart.getHours()),
       count: logs.filter(log => {
-        const timestamp = new Date(log.timestamp)
+        const timestamp = parseApiDate(log.timestamp)
         return timestamp >= hourStart && timestamp < hourEnd
       }).length,
     }
   })
   const maxHourlyActivity = Math.max(...hourlyActivity.map(item => item.count), 1)
+  const totalHourlyActivity = hourlyActivity.reduce((sum, item) => sum + item.count, 0)
 
   const filteredAdminAccounts = adminAccounts
     .filter(a => {
@@ -959,6 +1138,28 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
     }
   }
 
+  const handleDeleteAdmin = async (admin: AdminAccount) => {
+    if (!isSuperAdmin) return
+    if (!confirm(`Удалить администратора "${admin.username}"? Его компания и камеры останутся в системе.`)) return
+
+    setDeletingAdminId(admin.id)
+    try {
+      setDashboardError('')
+      await apiRequest<null>(`/api/auth/admin-users/${admin.id}/`, {
+        method: 'DELETE',
+        auth: true,
+      })
+      setAdminAccounts(prev => prev.filter(item => item.id !== admin.id))
+      setExpandedAdminIds(prev => prev.filter(id => id !== admin.id))
+      await fetchDashboardData()
+    } catch (error) {
+      console.error('Error deleting admin:', error)
+      setDashboardError(getErrorMessage(error, 'Не удалось удалить администратора'))
+    } finally {
+      setDeletingAdminId(null)
+    }
+  }
+
   const toggleSetting = (key: keyof typeof settings) =>
     setSettings(s => ({ ...s, [key]: !s[key] }))
 
@@ -1000,7 +1201,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                     <tr key={l.id}>
                       <td style={S.td}>{l.person_name || 'Неизвестный'}</td>
                       <td style={{ ...S.td, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
-                        {new Date(l.timestamp).toLocaleTimeString()}
+                        {formatTime(l.timestamp)}
                       </td>
                       <td style={S.td}>
                         {!l.unknown_face
@@ -1017,28 +1218,85 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
             <div style={S.card}>
               <div style={S.cardHeader}>
                 <span style={S.cardTitle}>Активность за 12 часов</span>
-                <span style={{ fontSize: 12, color: '#94a3b8' }}>распознаваний/час</span>
+                <span style={{ fontSize: 12, color: 'var(--dash-muted-soft)' }}>{totalHourlyActivity} событий</span>
               </div>
-              <div style={{ padding: '24px 22px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 120 }}>
+              <div style={{ padding: '22px 22px 18px' }}>
+                <div style={{
+                  height: 150,
+                  borderLeft: '1px solid var(--dash-border-soft)',
+                  borderBottom: '1px solid var(--dash-border-soft)',
+                  background: 'repeating-linear-gradient(to top, transparent 0, transparent 36px, var(--dash-border-soft) 37px)',
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  gap: 8,
+                  padding: '12px 10px 0',
+                  position: 'relative',
+                }}>
+                  {totalHourlyActivity === 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--dash-muted-soft)',
+                      fontSize: 13,
+                      textAlign: 'center',
+                    }}>
+                      За последние 12 часов распознаваний не было
+                    </div>
+                  )}
+                  {hourlyActivity.map((item, i) => {
+                    const heightPercent = item.count > 0 ? Math.max((item.count / maxHourlyActivity) * 100, 12) : 4
+                    const isCurrentHour = i === hourlyActivity.length - 1
+                    return (
+                      <div key={i} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 6, height: '100%' }}>
+                        <div style={{
+                          fontSize: 10,
+                          color: item.count > 0 ? 'var(--dash-text)' : 'var(--dash-muted-soft)',
+                          fontWeight: item.count > 0 ? 700 : 500,
+                          opacity: totalHourlyActivity === 0 ? 0 : 1,
+                        }}>
+                          {item.count}
+                        </div>
+                        <div
+                          title={`${item.label}:00 — ${item.count} распознаваний`}
+                          style={{
+                            width: '100%',
+                            maxWidth: 34,
+                            height: `${heightPercent}%`,
+                            minHeight: 6,
+                            background: item.count > 0
+                              ? (isCurrentHour
+                                ? 'linear-gradient(180deg, var(--dash-accent), var(--dash-accent-strong))'
+                                : 'linear-gradient(180deg, #7dd3fc, #2563eb)')
+                              : 'var(--dash-border-soft)',
+                            borderRadius: '6px 6px 0 0',
+                            opacity: item.count > 0 ? 1 : 0.65,
+                            transition: 'height 0.5s ease, background 0.2s ease',
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, padding: '0 10px 0 11px' }}>
                   {hourlyActivity.map((item, i) => (
-                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      <div style={{
-                        width: '100%',
-                        height: item.count > 0 ? `${Math.max((item.count / maxHourlyActivity) * 100, 4)}%` : 0,
-                        background: i === hourlyActivity.length - 1
-                          ? 'linear-gradient(180deg, #1a3fd4, #0a1f6b)'
-                          : 'linear-gradient(180deg, #93c5fd, #dbeafe)',
-                        borderRadius: 4,
-                        transition: 'height 0.5s',
-                      }} />
+                    <div key={i} style={{
+                      flex: 1,
+                      minWidth: 0,
+                      textAlign: 'center',
+                      fontSize: 10,
+                      color: i === hourlyActivity.length - 1 ? 'var(--dash-text)' : 'var(--dash-muted-soft)',
+                      fontWeight: i === hourlyActivity.length - 1 ? 700 : 500,
+                    }}>
+                      {item.label}
                     </div>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                  {hourlyActivity.map((item, i) => (
-                    <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: '#94a3b8' }}>{item.label}</div>
-                  ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: 'var(--dash-muted)' }}>
+                  <span>Пик: {maxHourlyActivity} / час</span>
+                  <span>Последний час: {hourlyActivity[hourlyActivity.length - 1]?.count || 0}</span>
                 </div>
               </div>
             </div>
@@ -1185,8 +1443,26 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
               <span style={S.cardTitle}>
                 {selectedCameraLogFilter ? `Лог распознаваний: ${selectedCameraLogFilter.username}` : 'Лог распознаваний'}
               </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={S.primaryMiniBtn} onClick={openRecognitionCheck}>Проверить</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <select
+                  value={recognitionModel}
+                  onChange={e => setRecognitionModel(e.target.value)}
+                  style={{ ...S.settingInput, width: 170, fontSize: 12, border: '1px solid #e2e8f0' }}
+                  title="Модель распознавания"
+                >
+                  <option value="">Выбрать модель</option>
+                  {RECOGNITION_MODELS.map(model => (
+                    <option key={model.value} value={model.value}>{model.label}</option>
+                  ))}
+                </select>
+                <button
+                  style={{ ...S.primaryMiniBtn, opacity: recognitionModel ? 1 : 0.55, cursor: recognitionModel ? 'pointer' : 'not-allowed' }}
+                  onClick={openRecognitionCheck}
+                  disabled={!recognitionModel}
+                  title={recognitionModel ? 'Проверить распознавание' : 'Сначала выберите модель'}
+                >
+                  Проверить
+                </button>
                 {selectedCameraLogFilter && (
                   <button style={S.miniBtn} onClick={() => setSelectedCameraLogFilter(null)}>Все камеры</button>
                 )}
@@ -1208,41 +1484,86 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 </tr>
               </thead>
               <tbody>
-                {filteredLogs.map(l => (
-                  <tr key={l.id}>
-                    <td style={{ ...S.td, color: '#94a3b8' }}>{l.id}</td>
-                    <td style={{ ...S.td, fontWeight: 500 }}>{l.person_name || 'Неизвестный'}</td>
-                    <td style={{ ...S.td, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
-                      {new Date(l.timestamp).toLocaleString()}
-                    </td>
-                    <td style={{ ...S.td, color: '#64748b' }}>
-                      {l.camera_username || cameras.find(camera => camera.id === l.camera_account)?.username || `Camera ${l.camera_account}`}
-                    </td>
-                    <td style={S.td}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{
-                          height: 6, width: 80, borderRadius: 3,
-                          background: '#f1f5f9', overflow: 'hidden',
-                        }}>
-                          <div style={{
-                            height: '100%',
-                            width: `${l.confidence}%`,
-                            background: l.confidence > 80
-                              ? 'linear-gradient(90deg, #10b981, #34d399)'
-                              : 'linear-gradient(90deg, #ef4444, #f87171)',
-                            borderRadius: 3,
-                          }} />
-                        </div>
-                        <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{l.confidence.toFixed(1)}%</span>
-                      </div>
-                    </td>
-                    <td style={S.td}>
-                      {!l.unknown_face
-                        ? <span style={S.badgeSuccess}>✓ Успех</span>
-                        : <span style={S.badgeFailed}>✗ Отказ</span>}
-                    </td>
-                  </tr>
-                ))}
+                {filteredLogs.map(l => {
+                  const isExpanded = expandedLogIds.includes(l.id)
+                  return (
+                    <React.Fragment key={l.id}>
+                      <tr style={{ cursor: 'pointer' }} onClick={() => toggleLogDetails(l.id)}>
+                        <td style={{ ...S.td, color: '#94a3b8' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{
+                              fontSize: 10,
+                              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              transition: 'transform 0.2s ease',
+                            }}>
+                              ▶
+                            </span>
+                            {l.id}
+                          </div>
+                        </td>
+                        <td style={{ ...S.td, fontWeight: 500 }}>{l.person_name || 'Неизвестный'}</td>
+                        <td style={{ ...S.td, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                          {formatDateTime(l.timestamp)}
+                        </td>
+                        <td style={{ ...S.td, color: '#64748b' }}>
+                          {l.camera_username || cameras.find(camera => camera.id === l.camera_account)?.username || `Camera ${l.camera_account}`}
+                        </td>
+                        <td style={S.td}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{
+                              height: 6, width: 80, borderRadius: 3,
+                              background: '#f1f5f9', overflow: 'hidden',
+                            }}>
+                              <div style={{
+                                height: '100%',
+                                width: `${l.confidence}%`,
+                                background: l.confidence > 80
+                                  ? 'linear-gradient(90deg, #10b981, #34d399)'
+                                  : 'linear-gradient(90deg, #ef4444, #f87171)',
+                                borderRadius: 3,
+                              }} />
+                            </div>
+                            <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{l.confidence.toFixed(1)}%</span>
+                          </div>
+                        </td>
+                        <td style={S.td}>
+                          {!l.unknown_face
+                            ? <span style={S.badgeSuccess}>✓ Успех</span>
+                            : <span style={S.badgeFailed}>✗ Отказ</span>}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: 0, borderBottom: '1px solid #e2e8f0', background: '#fafbff' }}>
+                            <div style={{ padding: '14px 24px 18px 42px', animation: 'dashFade 0.2s ease' }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: '#0d1b4b', marginBottom: 10 }}>
+                                Метрики модели
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                                <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', background: '#fff' }}>
+                                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Модель</div>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0d1b4b' }}>{l.model_name || 'EfficientNet-Lite0'}</div>
+                                </div>
+                                <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', background: '#fff' }}>
+                                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Средний FPS</div>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0d1b4b' }}>{formatMetric(l.average_fps)} fps</div>
+                                </div>
+                                <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', background: '#fff' }}>
+                                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Время обработки</div>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0d1b4b' }}>{formatMetric(l.processing_time_ms)} ms</div>
+                                </div>
+                                <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', background: '#fff' }}>
+                                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Энергопотребление</div>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0d1b4b' }}>{formatMetric(l.energy_consumption_wh, 6)} Wh</div>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -1307,7 +1628,23 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                         </td>
                         <td style={{ ...S.td, color: '#64748b' }}>{a.company_name || '-'}</td>
                         <td style={{ ...S.td, fontWeight: 600, color: '#0d1b4b' }}>{adminCameras.length}</td>
-                        <td style={S.td}><span style={S.badgeActive}>Администрация</span></td>
+                        <td style={S.td}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                            <span style={S.badgeActive}>Администрация</span>
+                            <button
+                              style={{
+                                ...S.miniBtn,
+                                color: '#ef4444',
+                                borderColor: '#fecaca',
+                                opacity: deletingAdminId === a.id ? 0.65 : 1,
+                              }}
+                              disabled={deletingAdminId !== null}
+                              onClick={() => handleDeleteAdmin(a)}
+                            >
+                              Удалить
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                       {isExpanded && (
                         <tr>
@@ -1401,7 +1738,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                             : <span style={S.badgeOffline}><div style={{ ...S.dot, background: '#dc2626' }} />Отключена</span>}
                         </td>
                         <td style={S.td}>
-                          <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
                             {canManageCameras && <button style={S.miniBtn} onClick={() => setAddExistingFaceModal(c)}>+ Пользователь</button>}
                             <button
                               style={S.miniBtn}
@@ -1413,13 +1750,30 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                               Просмотр логов
                             </button>
                             {canManageCameras && (
-                              <button
-                                style={{ ...S.miniBtn, opacity: 0.55, cursor: 'not-allowed' }}
-                                disabled
-                                title="Активация и деактивация камеры будет добавлена позже"
-                              >
-                                {c.is_active ? 'Деактивировать' : 'Активировать'}
-                              </button>
+                              <>
+                                <button
+                                  style={{
+                                    ...S.miniBtn,
+                                    opacity: cameraActionKey === `active-${c.id}` ? 0.65 : 1,
+                                  }}
+                                  disabled={cameraActionKey !== null}
+                                  onClick={() => handleToggleCameraActive(c)}
+                                >
+                                  {c.is_active ? 'Деактивировать' : 'Активировать'}
+                                </button>
+                                <button
+                                  style={{
+                                    ...S.miniBtn,
+                                    color: '#ef4444',
+                                    borderColor: '#fecaca',
+                                    opacity: cameraActionKey === `delete-${c.id}` ? 0.65 : 1,
+                                  }}
+                                  disabled={cameraActionKey !== null}
+                                  onClick={() => handleDeleteCamera(c)}
+                                >
+                                  Удалить
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -1529,7 +1883,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   {auditLogs.map(a => (
                     <tr key={a.id}>
                       <td style={{ ...S.td, color: '#94a3b8', fontSize: 13 }}>
-                        {new Date(a.timestamp).toLocaleString()}
+                        {formatDateTime(a.timestamp)}
                       </td>
                       <td style={{ ...S.td, fontWeight: 500 }}>{a.username}</td>
                       <td style={S.td}>
@@ -1564,7 +1918,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 <div style={S.settingRow}>
                   <div>
                     <div style={S.settingLabel}>Живое распознавание</div>
-                    <div style={S.settingDesc}>Обрабатывать кадры в реальном времени</div>
+                    <div style={S.settingDesc}>Автоматически проверять кадры в окне распознавания</div>
                   </div>
                   <Toggle on={settings.liveDetect} onChange={() => toggleSetting('liveDetect')} />
                 </div>
@@ -1587,7 +1941,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                 <div style={S.settingRow}>
                   <div>
                     <div style={S.settingLabel}>Сохранять лог</div>
-                    <div style={S.settingDesc}>Записывать все попытки распознавания</div>
+                    <div style={S.settingDesc}>Записывать результат проверки в журнал</div>
                   </div>
                   <Toggle on={settings.saveLog} onChange={() => toggleSetting('saveLog')} />
                 </div>
@@ -1596,20 +1950,20 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
 
             <div>
               <div style={S.card}>
-                <div style={S.cardHeader}><span style={S.cardTitle}>Безопасность</span></div>
+                <div style={S.cardHeader}><span style={S.cardTitle}>Готовность к защите</span></div>
                 <div style={S.settingRow}>
                   <div>
-                    <div style={S.settingLabel}>Уведомления о попытках взлома</div>
-                    <div style={S.settingDesc}>Отправлять алерт при подозрительной активности</div>
+                    <div style={S.settingLabel}>Камеры без пароля</div>
+                    <div style={S.settingDesc}>Вход выполняется только по названию камеры</div>
                   </div>
-                  <Toggle on={settings.alerts} onChange={() => toggleSetting('alerts')} />
+                  <span style={{ ...S.badgeSuccess, whiteSpace: 'nowrap' }}>✓ Работает</span>
                 </div>
                 <div style={S.settingRow}>
                   <div>
-                    <div style={S.settingLabel}>Двухфакторная аутентификация</div>
-                    <div style={S.settingDesc}>Дополнительная защита аккаунта</div>
+                    <div style={S.settingLabel}>Выбор модели обязателен</div>
+                    <div style={S.settingDesc}>Проверка недоступна, пока модель не выбрана</div>
                   </div>
-                  <Toggle on={settings.twoFactor} onChange={() => toggleSetting('twoFactor')} />
+                  <span style={{ ...S.badgeSuccess, whiteSpace: 'nowrap' }}>✓ Включено</span>
                 </div>
               </div>
 
@@ -1657,14 +2011,31 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         .dash-logout:hover { background: #fee2e2 !important; color: #dc2626 !important; border-color: #fecaca !important; }
         .dash-mini-btn:hover { background: #f8fafc !important; }
         tr:hover td { background: #fafbff; }
-        .dashboard-dark .dash-nav-btn:hover { background: rgba(96,165,250,0.14) !important; color: #93c5fd !important; }
-        .dashboard-dark .dash-mini-btn:hover { background: #243244 !important; }
-        .dashboard-dark tr:hover td { background: #182338 !important; }
+        .dashboard-dark {
+          color-scheme: dark;
+        }
+        .dashboard-dark .dash-nav-btn:hover { background: var(--dash-accent-soft) !important; color: #7ee7d6 !important; }
+        .dashboard-dark .dash-mini-btn:hover { background: #1f2d43 !important; border-color: #3a4c67 !important; }
+        .dashboard-dark .dash-logout:hover { background: rgba(248,113,113,0.14) !important; color: #fca5a5 !important; border-color: rgba(248,113,113,0.32) !important; }
+        .dashboard-dark tr:hover td { background: #172337 !important; }
+        .dashboard-dark table {
+          border-color: var(--dash-border-soft) !important;
+        }
+        .dashboard-dark option {
+          background: #0f1726;
+          color: #f7fbff;
+        }
         .dashboard-dark input,
         .dashboard-dark select {
           background: var(--dash-input-bg) !important;
           border-color: var(--dash-border) !important;
           color: var(--dash-heading) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        }
+        .dashboard-dark input:focus,
+        .dashboard-dark select:focus {
+          outline: 2px solid rgba(34,199,169,0.32);
+          border-color: var(--dash-accent) !important;
         }
         .dashboard-dark input::placeholder {
           color: var(--dash-muted-soft) !important;
@@ -1685,6 +2056,10 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
         .dashboard-dark th,
         .dashboard-dark h3 {
           color: inherit;
+        }
+        .dashboard-dark [style*="background: rgb(255, 255, 255)"],
+        .dashboard-dark [style*="background: #fff"] {
+          background: #121a2a !important;
         }
       `}</style>
 
@@ -1931,30 +2306,46 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   <div style={{ fontSize: 13, color: '#64748b' }}>
                     Accuracy: {recognitionCheckResult.accuracy.toFixed(1)}% / Порог: {recognitionCheckResult.threshold.toFixed(1)}%
                   </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                    {recognitionCheckResult.model_name}: {recognitionCheckResult.average_fps.toFixed(2)} fps · {recognitionCheckResult.energy_consumption_wh.toFixed(6)} Wh
+                  </div>
+                  {!settings.saveLog && (
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                      Лог не сохранен: сохранение журнала выключено в настройках
+                    </div>
+                  )}
                   {!recognitionCheckResult.recognized && recognitionCheckResult.similarity > 0 && (
                     <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
-                      Сходство FaceNet: {(recognitionCheckResult.similarity * 100).toFixed(1)}%
+                      Сходство модели: {(recognitionCheckResult.similarity * 100).toFixed(1)}%
                     </div>
                   )}
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div style={{ flex: 1, fontSize: 13, color: checkingRecognition ? '#1d4ed8' : '#64748b' }}>
+                  {checkingRecognition ? 'Автораспознавание...' : settings.liveDetect ? 'Автораспознавание включено' : 'Автораспознавание выключено'}
+                </div>
+                {!settings.liveDetect && (
+                  <button
+                    onClick={handleRecognitionCheck}
+                    disabled={checkingRecognition || !recognitionCheckStream}
+                    style={{
+                      ...S.primaryMiniBtn,
+                      minWidth: 160,
+                      padding: '10px',
+                      fontSize: 14,
+                      opacity: (checkingRecognition || !recognitionCheckStream) ? 0.6 : 1,
+                    }}
+                  >
+                    Проверить сейчас
+                  </button>
+                )}
                 <button
                   onClick={closeRecognitionCheck}
-                  style={{ ...S.miniBtn, flex: 1, padding: '10px', fontSize: 14 }}
+                  style={{ ...S.miniBtn, minWidth: 180, padding: '10px', fontSize: 14 }}
                 >
                   Закрыть
-                </button>
-                <button
-                  onClick={handleRecognitionCheck}
-                  disabled={checkingRecognition || !recognitionCheckStream}
-                  style={{
-                    ...S.primaryMiniBtn, flex: 1, padding: '10px', fontSize: 14,
-                    opacity: (checkingRecognition || !recognitionCheckStream) ? 0.6 : 1,
-                  }}
-                >
-                  {checkingRecognition ? 'Проверка...' : 'Проверить'}
                 </button>
               </div>
             </div>
@@ -1995,7 +2386,7 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
               </div>
 
               <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
-                Снимок будет сохранен в базе FaceNet для этого пользователя.
+                Снимок будет сохранен в базе всех трех моделей для этого пользователя.
               </div>
 
               {faceIdError && (
@@ -2171,20 +2562,10 @@ const Dashboard: FC<DashboardProps> = ({ username = 'Admin', user, onLogout }) =
                   style={S.settingInput}
                 />
               </div>
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Пароль для доступа камеры</div>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  value={newCamPass}
-                  onChange={e => setNewCamPass(e.target.value)}
-                  style={S.settingInput}
-                />
-              </div>
               <button
                 style={{ ...S.primaryBtn, width: '100%' }}
                 onClick={handleCreateCamera}
-                disabled={creatingCam}
+                disabled={creatingCam || !newCamUser.trim()}
               >
                 {creatingCam ? 'Создание...' : 'Создать камеру'}
               </button>

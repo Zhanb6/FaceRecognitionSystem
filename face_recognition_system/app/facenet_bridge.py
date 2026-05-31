@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -57,12 +58,18 @@ def _load_facenet_module() -> ModuleType:
 
     module = importlib.util.module_from_spec(spec)
     try:
+        sys.modules[spec.name] = module
         spec.loader.exec_module(module)
     except ImportError as exc:
         raise FaceNetDependencyError(str(exc)) from exc
 
     _facenet_module = module
     return module
+
+
+def available_face_models() -> list[dict]:
+    module = _load_facenet_module()
+    return module.list_models()
 
 
 def enroll_face_image(embedding_key: str, image_bytes: bytes) -> dict:
@@ -75,10 +82,10 @@ def enroll_face_image(embedding_key: str, image_bytes: bytes) -> dict:
         raise FaceEnrollmentError(str(exc)) from exc
 
 
-def recognize_face_image(image_bytes: bytes, threshold: float) -> dict:
+def recognize_face_image(image_bytes: bytes, threshold: float, model_name: str | None = None) -> dict:
     module = _load_facenet_module()
     try:
-        return module.recognize_image_bytes(image_bytes, FACENET_DATABASE, threshold)
+        return module.recognize_image_bytes(image_bytes, None, threshold, model_name or "efficientnet_lite0")
     except getattr(module, "FaceNetUnavailableError", RuntimeError) as exc:
         raise FaceNetDependencyError(str(exc)) from exc
     except ValueError as exc:

@@ -35,17 +35,25 @@ export interface RecognitionLog {
   person_name: string | null
   unknown_face: boolean
   confidence: number
+  model_name?: string | null
+  processing_time_ms?: number
+  average_fps?: number
+  energy_consumption_wh?: number
   timestamp: string
 }
 
 export interface RecognitionCheckResponse {
-  log: RecognitionLog
+  log: RecognitionLog | null
   recognized: boolean
   person_name: string | null
   accuracy: number
   threshold: number
   similarity: number
   detection_confidence: number
+  model_name: string
+  processing_time_ms: number
+  average_fps: number
+  energy_consumption_wh: number
   message: string
 }
 

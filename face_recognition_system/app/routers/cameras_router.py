@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import CustomUser, PersonFace, RoleEnum
+from ..models import AuditLog, CustomUser, PersonFace, RecognitionLog, RoleEnum
 from ..schemas import CameraCreate, AddRemoveFaceRequest
 from ..auth import get_current_user, hash_password
 from ..utils import is_super_admin, is_company_admin, get_request_company, log_action
@@ -23,6 +23,20 @@ def _face_out(face: PersonFace) -> dict:
         "created_at": face.created_at.isoformat() if face.created_at else None,
         "allowed_cameras": [cam.id for cam in face.allowed_cameras],
     }
+
+
+def _get_manageable_camera(camera_id: int, current_user: CustomUser, db: Session) -> CustomUser:
+    if not (is_company_admin(current_user) or is_super_admin(current_user)):
+        raise HTTPException(status_code=403, detail="Admin permission required")
+
+    camera = db.query(CustomUser).filter(CustomUser.id == camera_id, CustomUser.is_camera.is_(True)).first()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    if not is_super_admin(current_user) and camera.company_id != current_user.company_id:
+        raise HTTPException(status_code=403, detail="Forbidden for this company")
+
+    return camera
 
 
 @router.get("/")
@@ -68,8 +82,8 @@ def create_camera(
 
     email = body.email or f"{body.username}@camera.system"
 
-    if not body.username or not body.password:
-        raise HTTPException(status_code=400, detail="Username and password are required")
+    if not body.username:
+        raise HTTPException(status_code=400, detail="Camera name is required")
 
     if db.query(CustomUser).filter(CustomUser.username == body.username).first():
         raise HTTPException(status_code=400, detail="This camera name is already taken")
@@ -77,7 +91,7 @@ def create_camera(
     camera = CustomUser(
         username=body.username,
         email=email,
-        hashed_password=hash_password(body.password),
+        hashed_password=hash_password(f"camera-account:{body.username}"),
         is_camera=True,
         is_staff=False,
         role=RoleEnum.CAMERA,
@@ -97,6 +111,54 @@ def create_camera(
         "username": camera.username,
         "company_id": company.id,
     }
+
+
+@router.patch("/{camera_id}/active/")
+def toggle_camera_active(
+    camera_id: int,
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    camera = _get_manageable_camera(camera_id, current_user, db)
+    camera.is_active = not camera.is_active
+    db.commit()
+    db.refresh(camera)
+
+    action = "Активация камеры" if camera.is_active else "Деактивация камеры"
+    status_text = "активирована" if camera.is_active else "деактивирована"
+    log_action(db, current_user, action, f"Камера **{camera.username}** {status_text}")
+
+    return {
+        "message": f"Camera {status_text}",
+        "camera_id": camera.id,
+        "is_active": camera.is_active,
+    }
+
+
+@router.delete("/{camera_id}/", status_code=status.HTTP_204_NO_CONTENT)
+def delete_camera(
+    camera_id: int,
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    camera = _get_manageable_camera(camera_id, current_user, db)
+    camera_name = camera.username
+
+    camera.faces.clear()
+    db.query(AuditLog).filter(AuditLog.user_id == camera.id).delete(synchronize_session=False)
+    db.query(RecognitionLog).filter(RecognitionLog.camera_account_id == camera.id).delete(synchronize_session=False)
+    db.query(PersonFace).filter(PersonFace.owner_id == camera.id).update(
+        {PersonFace.owner_id: None},
+        synchronize_session=False,
+    )
+    db.query(CustomUser).filter(CustomUser.owner_id == camera.id).update(
+        {CustomUser.owner_id: None},
+        synchronize_session=False,
+    )
+    db.delete(camera)
+    db.commit()
+
+    log_action(db, current_user, "Удаление камеры", f"Удалена камера: **{camera_name}**")
 
 
 @router.get("/{camera_id}/faces/")

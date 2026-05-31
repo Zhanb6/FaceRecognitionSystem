@@ -4,13 +4,20 @@ Logs router — CRUD for RecognitionLog, mirrors RecognitionLogViewSet.
 import base64
 import binascii
 import logging
+from datetime import datetime, timezone
+from time import perf_counter
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..facenet_bridge import FaceEnrollmentError, FaceNetDependencyError, recognize_face_image
+from ..facenet_bridge import (
+    FaceEnrollmentError,
+    FaceNetDependencyError,
+    available_face_models,
+    recognize_face_image,
+)
 from ..models import CustomUser, PersonFace, RecognitionLog
 from ..schemas import RecognitionCheckRequest, RecognitionLogCreate
 from ..auth import get_current_user
@@ -18,6 +25,65 @@ from ..utils import is_company_admin, is_super_admin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MODEL_POWER_WATTS = {
+    "facenet": 18.0,
+    "mobilefacenet": 6.0,
+    "efficientnet_lite0": 9.0,
+}
+MODEL_LABELS = {
+    "facenet": "FaceNet",
+    "mobilefacenet": "MobileFaceNet",
+    "efficientnet_lite0": "EfficientNet-Lite0",
+}
+MODEL_ALIASES = {
+    "facenet-cpu": "facenet",
+    "facenet-gpu": "facenet",
+    "efficientnet-lite0": "efficientnet_lite0",
+    "efficientnet": "efficientnet_lite0",
+}
+
+
+def _normalize_model_name(model_name: Optional[str]) -> str:
+    key = (model_name or "efficientnet_lite0").strip().lower()
+    key = MODEL_ALIASES.get(key, key)
+    return key if key in MODEL_POWER_WATTS else "efficientnet_lite0"
+
+
+def _model_metrics(model_name: str, elapsed_seconds: float) -> dict:
+    safe_elapsed = max(elapsed_seconds, 0.001)
+    return {
+        "model_name": MODEL_LABELS[model_name],
+        "processing_time_ms": round(safe_elapsed * 1000, 2),
+        "average_fps": round(1 / safe_elapsed, 2),
+        "energy_consumption_wh": round((MODEL_POWER_WATTS[model_name] * safe_elapsed) / 3600, 6),
+    }
+
+
+def _utc_isoformat(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+@router.get("/models/")
+def recognition_models(current_user: CustomUser = Depends(get_current_user)):
+    try:
+        models = available_face_models()
+    except FaceNetDependencyError as exc:
+        raise HTTPException(status_code=503, detail=f"FaceNet dependencies are not installed: {exc}") from exc
+
+    return [
+        {
+            "key": model["key"],
+            "label": model["label"],
+            "input_size": model["input_size"],
+            "embedding_size": model["embedding_size"],
+        }
+        for model in models
+    ]
 
 
 def _log_out(log: RecognitionLog) -> dict:
@@ -29,7 +95,11 @@ def _log_out(log: RecognitionLog) -> dict:
         "person_name": log.person.full_name if log.person else None,
         "unknown_face": log.unknown_face,
         "confidence": log.confidence,
-        "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+        "model_name": log.model_name or "EfficientNet-Lite0",
+        "processing_time_ms": float(log.processing_time_ms or 0.0),
+        "average_fps": float(log.average_fps or 0.0),
+        "energy_consumption_wh": float(log.energy_consumption_wh or 0.0),
+        "timestamp": _utc_isoformat(log.timestamp),
     }
 
 
@@ -175,9 +245,13 @@ def check_recognition(
     image_bytes = _decode_image_data(body.image_data)
     camera = _get_visible_camera(current_user, body.camera_id, db)
     threshold = max(0.0, min(float(body.threshold), 100.0)) / 100.0
+    model_name = _normalize_model_name(body.model_name)
 
     try:
-        result = recognize_face_image(image_bytes, threshold)
+        started_at = perf_counter()
+        result = recognize_face_image(image_bytes, threshold, model_name)
+        result_model_name = _normalize_model_name(result.get("model_key", model_name))
+        metrics = _model_metrics(result_model_name, perf_counter() - started_at)
     except FaceNetDependencyError as exc:
         raise HTTPException(
             status_code=503,
@@ -197,24 +271,31 @@ def check_recognition(
         message = "Точность ниже порога"
 
     effective_accuracy = float(result.get("accuracy", 0.0)) if person else 0.0
-    log = RecognitionLog(
-        camera_account_id=camera.id,
-        person_id=person.id if person else None,
-        unknown_face=not bool(person),
-        confidence=effective_accuracy,
-    )
-    db.add(log)
-    db.commit()
-    db.refresh(log)
+    log = None
+    if body.save_log:
+        log = RecognitionLog(
+            camera_account_id=camera.id,
+            person_id=person.id if person else None,
+            unknown_face=not bool(person),
+            confidence=effective_accuracy,
+            **metrics,
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
 
     return {
-        "log": _log_out(log),
+        "log": _log_out(log) if log else None,
         "recognized": bool(person),
-        "person_name": log.person.full_name if log.person else None,
+        "person_name": person.full_name if person else None,
         "accuracy": effective_accuracy,
         "threshold": round(threshold * 100, 1),
         "similarity": float(result.get("score", 0.0)),
         "detection_confidence": float(result.get("detection_confidence", 0.0)),
+        "model_name": metrics["model_name"],
+        "processing_time_ms": metrics["processing_time_ms"],
+        "average_fps": metrics["average_fps"],
+        "energy_consumption_wh": metrics["energy_consumption_wh"],
         "message": message or ("Пользователь распознан" if person else "Пользователь не распознан"),
     }
 
@@ -278,6 +359,10 @@ def create_log(
         person_id=body.person,
         unknown_face=body.unknown_face,
         confidence=body.confidence,
+        model_name=body.model_name or "EfficientNet-Lite0",
+        processing_time_ms=body.processing_time_ms or 0.0,
+        average_fps=body.average_fps or 0.0,
+        energy_consumption_wh=body.energy_consumption_wh or 0.0,
     )
     db.add(log)
     db.commit()

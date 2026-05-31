@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import CustomUser, Company, RoleEnum
+from ..models import AuditLog, CustomUser, Company, PersonFace, RoleEnum
 from ..schemas import CreateAdminRequest, CreateCompanyAdminRequest, CreateCompanyUserRequest
 from ..auth import get_current_user, hash_password
 from ..utils import is_super_admin, is_company_admin, get_request_company, log_action
@@ -201,6 +201,50 @@ def create_admin_user(
         "message": "Admin account created",
         "admin": _user_out(admin_user),
     }
+
+
+@router.delete("/admin-users/{admin_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/admin-users/{admin_id}/", status_code=status.HTTP_204_NO_CONTENT)
+def delete_admin_user(
+    admin_id: int,
+    current_user: CustomUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Super Admin permission required")
+
+    if current_user.id == admin_id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    admin_user = (
+        db.query(CustomUser)
+        .filter(CustomUser.id == admin_id, CustomUser.role == RoleEnum.ADMIN)
+        .first()
+    )
+    if not admin_user:
+        raise HTTPException(status_code=404, detail="Admin account not found")
+
+    admin_name = admin_user.username
+    company_name = admin_user.company.name if admin_user.company else "-"
+
+    db.query(AuditLog).filter(AuditLog.user_id == admin_user.id).delete(synchronize_session=False)
+    db.query(PersonFace).filter(PersonFace.owner_id == admin_user.id).update(
+        {PersonFace.owner_id: None},
+        synchronize_session=False,
+    )
+    db.query(CustomUser).filter(CustomUser.owner_id == admin_user.id).update(
+        {CustomUser.owner_id: None},
+        synchronize_session=False,
+    )
+    db.delete(admin_user)
+    db.commit()
+
+    log_action(
+        db,
+        current_user,
+        "Удаление администратора",
+        f"Удален администратор **{admin_name}** (компания: **{company_name}**)",
+    )
 
 
 # ── Company Admin creation ───────────────────────────────────────────────────

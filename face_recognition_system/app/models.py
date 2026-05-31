@@ -107,6 +107,10 @@ class RecognitionLog(Base):
     person_id = Column(Integer, ForeignKey("person_faces.id"), nullable=True)
     unknown_face = Column(Boolean, default=False)
     confidence = Column(Float, default=0.0)
+    model_name = Column(String(100), default="EfficientNet-Lite0")
+    processing_time_ms = Column(Float, default=0.0)
+    average_fps = Column(Float, default=0.0)
+    energy_consumption_wh = Column(Float, default=0.0)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     camera_account = relationship("CustomUser", back_populates="logs")

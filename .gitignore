@@ -39,6 +39,7 @@ yarn-error.log*
 # Build artifacts
 dist/
 out/
+_unused_project_files_*/
 
 # Environment files
 .env

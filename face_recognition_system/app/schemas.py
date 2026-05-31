@@ -18,7 +18,7 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     login: str
-    password: str
+    password: Optional[str] = None
 
 
 class TokenRefreshRequest(BaseModel):
@@ -84,12 +84,18 @@ class RecognitionLogCreate(BaseModel):
     person: Optional[int] = None
     unknown_face: bool = False
     confidence: float = 0.0
+    model_name: Optional[str] = None
+    processing_time_ms: Optional[float] = None
+    average_fps: Optional[float] = None
+    energy_consumption_wh: Optional[float] = None
 
 
 class RecognitionCheckRequest(BaseModel):
     image_data: str
     camera_id: Optional[int] = None
-    threshold: float = 85.0
+    threshold: float =50.0
+    model_name: Optional[str] = None
+    save_log: bool = True
 
 
 class RecognitionLogOut(BaseModel):
@@ -99,6 +105,10 @@ class RecognitionLogOut(BaseModel):
     person_name: Optional[str] = None
     unknown_face: bool
     confidence: float
+    model_name: Optional[str] = None
+    processing_time_ms: float = 0.0
+    average_fps: float = 0.0
+    energy_consumption_wh: float = 0.0
     timestamp: datetime
 
     model_config = {"from_attributes": True}
@@ -119,7 +129,7 @@ class AuditLogOut(BaseModel):
 # ── Camera ───────────────────────────────────────────────────────────────────
 class CameraCreate(BaseModel):
     username: str
-    password: str
+    password: Optional[str] = None
     email: Optional[str] = None
     company_id: Optional[int] = None
 

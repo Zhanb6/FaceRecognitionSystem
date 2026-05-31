@@ -66,7 +66,13 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     if not user:
         user = db.query(CustomUser).filter(CustomUser.email == body.login).first()
 
-    if not user or not verify_password(body.password, user.hashed_password):
+    if not user:
+        raise HTTPException(status_code=401, detail="Incorrect Credentials")
+
+    if user.is_camera and not user.is_active:
+        raise HTTPException(status_code=403, detail="Camera account is deactivated")
+
+    if not user.is_camera and not verify_password(body.password or "", user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect Credentials")
 
     tokens = get_tokens_for_user(user.id)
